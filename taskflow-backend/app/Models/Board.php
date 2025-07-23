@@ -7,29 +7,55 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class BoardColumn extends Model
+class Board extends Model
 {
     use HasFactory;
+    protected $appends = ['created_by'];
 
     protected $fillable = [
-        'board_id',
         'name',
-        'position',
-        'color',
+        'description',
+        'team_id',
+        'created_by',
     ];
 
-    public function board(): BelongsTo
+    protected $with = ['team', 'createdBy', 'columns'];
+
+    public function team(): BelongsTo
     {
-        return $this->belongsTo(Board::class);
+        return $this->belongsTo(Team::class);
+    }
+
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function columns(): HasMany
+    {
+        return $this->hasMany(BoardColumn::class);
     }
 
     public function tasks(): HasMany
     {
-        return $this->hasMany(Task::class, 'column_id')->orderBy('position');
+        return $this->hasMany(Task::class);
     }
 
-    public function scopeOrdered($query)
+    public function scopeForUser($query, $userId)
     {
-        return $query->orderBy('position');
+        return $query->whereHas('team', function ($q) use ($userId) {
+            $q->forUser($userId);
+        });
     }
+
+    public function canUserAccess(User $user): bool
+    {
+        return $this->team->isMember($user);
+    }
+
+    public function canUserManage(User $user): bool
+    {
+        return $this->team->isAdmin($user) || $this->createdBy?->id === $user->id;
+    }
+
 }

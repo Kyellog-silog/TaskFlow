@@ -1,6 +1,6 @@
 "use client"
 
-import type React from "react"
+import * as React from "react"
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"
 import { QueryClient, QueryClientProvider } from "react-query"
 import { ReactQueryDevtools } from "react-query/devtools"
@@ -11,6 +11,8 @@ import { ProtectedRoute } from "./components/ProtectedRoute"
 import { LoadingSpinner } from "./components/LoadingSpinner"
 import { ErrorBoundary } from "./components/ErrorBoundary"
 import { useAuth } from "./contexts/AuthContext"
+import { useToast } from "./hooks/use-toast"
+import { setToastHandler } from "./services/api"
 
 // Pages
 import LoginPage from "./pages/LoginPage"
@@ -41,6 +43,10 @@ const queryClient = new QueryClient({
 })
 
 function App() {
+  const toastHandler = useToast()
+  React.useEffect(() => {
+    setToastHandler(toastHandler)
+  }, [toastHandler])
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>

@@ -1,27 +1,38 @@
 
 import axios from "axios"
 
+let toastHandler = {
+  toast: (props: any) => {
+    console.error("Toast not initialized", props)
+  },
+}
+
+export const setToastHandler = (handler: any) => {
+  toastHandler = handler
+}
+
+
 const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000/api";
+const SANCTUM_BASE_URL = process.env.REACT_APP_SANCTUM_URL || "http://localhost:8000";
 
 // Create axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: true,
+  withXSRFToken: true,
   headers: {
     "Content-Type": "application/json",
     Accept: "application/json",
     "X-Requested-With": "XMLHttpRequest",
   },
-  withCredentials: true,
 });
 
-// Fetch CSRF token before protected requests
 api.interceptors.request.use(async (config) => {
-  // Skip for CSRF endpoint itself
   if (config.url?.includes("sanctum/csrf-cookie")) return config;
   
   // Ensure CSRF token exists
   if (!document.cookie.includes("XSRF-TOKEN")) {
-    await axios.get(`${API_BASE_URL}/sanctum/csrf-cookie`, {
+    await axios.get(`${SANCTUM_BASE_URL}/sanctum/csrf-cookie`, {
       withCredentials: true,
     });
   }
@@ -39,27 +50,100 @@ api.interceptors.request.use(async (config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 419) { // CSRF token mismatch
-      console.warn("CSRF token expired, refreshing...");
-      localStorage.removeItem("token");
-      window.location.reload();
+    // Create a default error message
+    let errorTitle = "Error"
+    let errorMessage = "An unexpected error occurred"
+
+    // Handle specific error status codes
+    if (error.response) {
+      const { status } = error.response
+
+      switch (status) {
+        case 401: // Unauthorized
+          errorTitle = "Session Expired"
+          errorMessage = "Your session has expired. Please log in again."
+          // Store the current path to redirect back after login
+          localStorage.setItem("redirectAfterLogin", window.location.pathname)
+          // Remove token but don't reload
+          localStorage.removeItem("token")
+          // We'll handle the redirect in the auth context
+          break
+
+        case 403: // Forbidden
+          errorTitle = "Access Denied"
+          errorMessage = "You don't have permission to perform this action"
+          break
+
+        case 404: // Not Found
+          errorTitle = "Not Found"
+          errorMessage = "The requested resource was not found"
+          break
+
+        case 419: // CSRF token mismatch
+          errorTitle = "Session Expired"
+          errorMessage = "Your session has expired. Please refresh the page."
+          // Don't reload, just show the message
+          break
+
+        case 422: // Validation error
+          errorTitle = "Validation Error"
+          errorMessage = "Please check your input and try again"
+          // If we have validation errors, show them
+          if (error.response.data && error.response.data.errors) {
+            const validationErrors = Object.values(error.response.data.errors).flat()
+            if (validationErrors.length > 0) {
+              errorMessage = validationErrors.join("\n")
+            }
+          }
+          break
+
+        case 429: // Too Many Requests
+          errorTitle = "Too Many Requests"
+          errorMessage = "Please slow down and try again later"
+          break
+
+        case 500: // Server Error
+          errorTitle = "Server Error"
+          errorMessage = "Something went wrong on our end. Please try again later."
+          break
+
+        default:
+          errorTitle = `Error ${status}`
+          errorMessage = error.response.data?.message || "An error occurred"
+      }
+    } else if (error.request) {
+      // The request was made but no response was received
+      errorTitle = "Network Error"
+      errorMessage = "Unable to connect to the server. Please check your internet connection."
     }
-    return Promise.reject(error);
+
+    // Show toast notification with the error
+    toastHandler.toast({
+      title: errorTitle,
+      description: errorMessage,
+      variant: "destructive",
+    })
+
+    // Return the rejected promise
+    return Promise.reject(error)
   },
 )
 
 // Auth API
 export const authAPI = {
   login: async (email: string, password: string) => {
-    await axios.get('http://localhost:8000/sanctum/csrf-cookie', { withCredentials: true });
     const response = await api.post("/login", { email, password })
     return response.data
   },
 
-  register: async (name: string, email: string, password: string) => {
-    await axios.get('http://localhost:8000/sanctum/csrf-cookie', { withCredentials: true });
-    const response = await api.post("/register", { name, email, password })
-    return response.data
+  register: async (name: string, email: string, password: string, passwordConfirmation: string) => {
+    const response = await api.post("/register", { 
+      name, 
+      email, 
+      password,
+      password_confirmation: passwordConfirmation
+    });
+    return response.data;
   },
 
   logout: async () => {

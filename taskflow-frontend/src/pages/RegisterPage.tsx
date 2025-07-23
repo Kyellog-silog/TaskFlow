@@ -47,7 +47,7 @@ const RegisterPage = () => {
     }
 
     try {
-      await register(formData.name, formData.email, formData.password)
+      await register(formData.name, formData.email, formData.password, formData.confirmPassword)
       toast({
         title: "Success",
         description: "Account created successfully. Please log in.",

@@ -2,7 +2,7 @@
 class WebSocketService {
     private ws: WebSocket | null = null
     private reconnectAttempts = 0
-    private maxReconnectAttempts = 5
+    private maxReconnectAttempts = 20
     private reconnectInterval = 1000
   
     connect(url: string, onMessage?: (data: any) => void) {
