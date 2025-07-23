@@ -1,0 +1,34 @@
+# Node
+node_modules/
+.env.local
+.env.development
+.env.production
+
+# Laravel
+/vendor
+.env
+.env.*.backup
+.phpunit.result.cache
+/storage/*.key
+/storage/app/public
+/storage/debugbar
+/storage/framework/cache
+/storage/framework/sessions
+/storage/framework/testing
+/storage/framework/views
+/storage/logs
+
+# System
+.DS_Store
+Thumbs.db
+
+# Vite / build
+/dist
+/build
+/public/build
+/public/hot
+
+# IDEs
+.vscode/
+.idea/
+*.code-workspace

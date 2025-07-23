@@ -1,0 +1,175 @@
+/* Component-specific styles */
+
+/* Button variants */
+.btn-primary {
+    @apply bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500;
+  }
+  
+  .btn-secondary {
+    @apply bg-gray-200 text-gray-900 hover:bg-gray-300 focus:ring-gray-500;
+  }
+  
+  .btn-danger {
+    @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+  }
+  
+  /* Card styles */
+  .card-hover {
+    @apply transition-all duration-200 hover:shadow-lg hover:-translate-y-1;
+  }
+  
+  /* Form styles */
+  .form-input {
+    @apply block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500;
+  }
+  
+  .form-label {
+    @apply block text-sm font-medium text-gray-700 mb-1;
+  }
+  
+  .form-error {
+    @apply text-sm text-red-600 mt-1;
+  }
+  
+  /* Badge styles */
+  .badge-priority-high {
+    @apply bg-red-100 text-red-800 border-red-200;
+  }
+  
+  .badge-priority-medium {
+    @apply bg-yellow-100 text-yellow-800 border-yellow-200;
+  }
+  
+  .badge-priority-low {
+    @apply bg-green-100 text-green-800 border-green-200;
+  }
+  
+  .badge-status-todo {
+    @apply bg-gray-100 text-gray-800 border-gray-200;
+  }
+  
+  .badge-status-progress {
+    @apply bg-blue-100 text-blue-800 border-blue-200;
+  }
+  
+  .badge-status-review {
+    @apply bg-purple-100 text-purple-800 border-purple-200;
+  }
+  
+  .badge-status-done {
+    @apply bg-green-100 text-green-800 border-green-200;
+  }
+  
+  /* Kanban board styles */
+  .kanban-column {
+    @apply bg-gray-50 rounded-lg p-4 min-h-96;
+  }
+  
+  .kanban-column-header {
+    @apply flex items-center justify-between mb-4 pb-2 border-b border-gray-200;
+  }
+  
+  .kanban-task-card {
+    @apply bg-white rounded-lg p-3 mb-3 shadow-sm border border-gray-200 cursor-pointer transition-all duration-200;
+  }
+  
+  .kanban-task-card:hover {
+    @apply shadow-md transform -translate-y-0.5;
+  }
+  
+  .kanban-task-dragging {
+    @apply opacity-50 transform rotate-3 scale-105;
+  }
+  
+  /* Modal styles */
+  .modal-overlay {
+    @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50;
+  }
+  
+  .modal-content {
+    @apply bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-screen overflow-y-auto;
+  }
+  
+  /* Dropdown styles */
+  .dropdown-item {
+    @apply block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 cursor-pointer;
+  }
+  
+  /* Avatar styles */
+  .avatar-sm {
+    @apply h-6 w-6 text-xs;
+  }
+  
+  .avatar-md {
+    @apply h-8 w-8 text-sm;
+  }
+  
+  .avatar-lg {
+    @apply h-12 w-12 text-base;
+  }
+  
+  .avatar-xl {
+    @apply h-16 w-16 text-lg;
+  }
+  
+  /* Sidebar styles */
+  .sidebar-item {
+    @apply flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200;
+  }
+  
+  .sidebar-item-active {
+    @apply bg-blue-100 text-blue-700;
+  }
+  
+  .sidebar-item-inactive {
+    @apply text-gray-600 hover:bg-gray-100 hover:text-gray-900;
+  }
+  
+  /* Table styles */
+  .table-header {
+    @apply px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;
+  }
+  
+  .table-cell {
+    @apply px-6 py-4 whitespace-nowrap text-sm text-gray-900;
+  }
+  
+  .table-row {
+    @apply hover:bg-gray-50 transition-colors duration-200;
+  }
+  
+  /* Loading states */
+  .skeleton {
+    @apply animate-pulse bg-gray-200 rounded;
+  }
+  
+  .skeleton-text {
+    @apply h-4 bg-gray-200 rounded;
+  }
+  
+  .skeleton-avatar {
+    @apply h-10 w-10 bg-gray-200 rounded-full;
+  }
+  
+  /* Responsive utilities */
+  @media (max-width: 640px) {
+    .mobile-hidden {
+      @apply hidden;
+    }
+  
+    .mobile-full {
+      @apply w-full;
+    }
+  }
+  
+  /* Print styles */
+  @media print {
+    .print-hidden {
+      @apply hidden;
+    }
+  
+    .print-visible {
+      @apply block;
+    }
+  }
+  
