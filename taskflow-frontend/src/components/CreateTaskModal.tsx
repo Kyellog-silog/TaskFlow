@@ -1,6 +1,6 @@
 "use client"
 
-import * as React from "react"
+import type React from "react"
 import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Button } from "./ui/button"

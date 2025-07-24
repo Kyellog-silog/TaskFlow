@@ -11,12 +11,12 @@ interface Task {
   description: string
   status: string
   priority: "low" | "medium" | "high"
-  assignee: {
+  assignee?: {
     id: string
     name: string
     avatar: string
   }
-  dueDate: string
+  dueDate?: string
   comments: any[]
   createdAt: string
   isLocked?: boolean

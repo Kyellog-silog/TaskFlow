@@ -3,6 +3,7 @@
 import * as React from "react"
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import { authAPI } from "../services/api"
+import { tr } from "date-fns/locale"
 
 
 
@@ -18,7 +19,6 @@ interface User {
 
 interface AuthContextType {
   user: User | null
-  token: string | null
   login: (email: string, password: string) => Promise<void>
   register: (name: string, email: string, password: string, password_confirmation: string)  => Promise<void>
   logout: () => void
@@ -40,54 +40,55 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null)
-  const [token, setToken] = useState<string | null>(localStorage.getItem("token"))
-  const [isLoading, setIsLoading] = useState(true)
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
+  // Check authentication status on mount
   useEffect(() => {
-    const initAuth = async () => {
-      if (token) {
-        try {
-          const userData = await authAPI.getUser()
-          setUser(userData)
-        } catch (error) {
-          localStorage.removeItem("token")
-          setToken(null)
+    const checkAuthStatus = async() => {
+      try {
+        const response = await authAPI.getUser();
+        if (response.success && response.data.user) {
+          setUser(response.data.user);
         }
+      } catch (error) {
+        // If error, user is not authenticated
+        setUser(null);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false)
-    }
-
-    initAuth()
-  }, [token])
+    };
+    
+    checkAuthStatus();
+  }, []);
 
   const login = async (email: string, password: string) => {
-    const response = await authAPI.login(email, password)
-    const { user: userData, token: authToken } = response
-
-    localStorage.setItem("token", authToken)
-    setToken(authToken)
-    setUser(userData)
+    const response = await authAPI.login(email, password);
+    if (response.success && response.data && response.data.user) {
+      setUser(response.data.user);
+    }
+    return response;
   }
 
   const register = async (name: string, email: string, password: string, password_confirmation: string) => {
-    const response = await authAPI.register(name, email, password, password_confirmation)
-    const { user: userData, token: authToken } = response
-
-    localStorage.setItem("token", authToken)
-    setToken(authToken)
-    setUser(userData)
+    const response = await authAPI.register(name, email, password, password_confirmation);
+    if (response.success && response.data && response.data.user) {
+      setUser(response.data.user);
+    }
+    return response;
   }
 
-  const logout = () => {
-    localStorage.removeItem("token")
-    setToken(null)
-    setUser(null)
+  const logout = async () => {
+    try {
+      await authAPI.logout();
+    } finally {
+      // Even if logout API fails, clear user state
+      setUser(null);
+    }
   }
 
   const value = {
     user,
-    token,
     login,
     register,
     logout,

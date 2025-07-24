@@ -1,6 +1,6 @@
 "use client"
 
-import * as React from "react"
+import type React from "react"
 import { useState, useEffect } from "react"
 import { useParams } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "react-query"
@@ -17,12 +17,12 @@ interface Task {
   description: string
   status: string
   priority: "low" | "medium" | "high"
-  assignee: {
+  assignee?: {
     id: string
     name: string
     avatar: string
   }
-  dueDate: string
+  dueDate?: string
   comments: any[]
   createdAt: string
   isLocked?: boolean
@@ -47,22 +47,48 @@ const BoardPage: React.FC = () => {
   const [columns, setColumns] = useState<Column[]>([])
 
   // Fetch board data
-  const { data: board, isLoading: boardLoading } = useQuery(["board", boardId], () => boardsAPI.getBoard(boardId!), {
-    enabled: !!boardId,
-  })
+  const { data: board, isLoading: boardLoading } = useQuery(
+    ["board", boardId],
+    async () => {
+      const response = await boardsAPI.getBoard(boardId!)
+      return response
+    },
+    {
+      enabled: !!boardId,
+      onError: (error: any) => {
+        toast({
+          title: "Error",
+          description: "Failed to load board data",
+          variant: "destructive",
+        })
+      },
+    },
+  )
 
   // Fetch tasks
   const { data: tasksData, isLoading: tasksLoading } = useQuery(
     ["tasks", boardId],
-    () => tasksAPI.getTasks({ board_id: boardId }),
+    async () => {
+      const response = await tasksAPI.getTasks(boardId)
+      return response
+    },
     {
       enabled: !!boardId,
+      onError: (error: any) => {
+        toast({
+          title: "Error",
+          description: "Failed to load tasks",
+          variant: "destructive",
+        })
+      },
     },
   )
 
   // Move task mutation
   const moveTaskMutation = useMutation(
-    ({ taskId, moveData }: { taskId: string; moveData: any }) => tasksAPI.moveTask(taskId, moveData),
+    async ({ taskId, columnId, position }: { taskId: string; columnId: string; position: number }) => {
+      return await tasksAPI.moveTask(taskId, columnId, position)
+    },
     {
       onSuccess: () => {
         queryClient.invalidateQueries(["tasks", boardId])
@@ -71,19 +97,23 @@ const BoardPage: React.FC = () => {
           description: "Task moved successfully",
         })
       },
-      onError: () => {
+      onError: (error: any) => {
         toast({
           title: "Error",
-          description: "Failed to move task",
+          description: error.response?.data?.message || "Failed to move task",
           variant: "destructive",
         })
+        // Revert optimistic update
+        queryClient.invalidateQueries(["tasks", boardId])
       },
     },
   )
 
   // Update task mutation
   const updateTaskMutation = useMutation(
-    ({ taskId, taskData }: { taskId: string; taskData: any }) => tasksAPI.updateTask(taskId, taskData),
+    async ({ taskId, taskData }: { taskId: string; taskData: any }) => {
+      return await tasksAPI.updateTask(taskId, taskData)
+    },
     {
       onSuccess: () => {
         queryClient.invalidateQueries(["tasks", boardId])
@@ -92,10 +122,10 @@ const BoardPage: React.FC = () => {
           description: "Task updated successfully",
         })
       },
-      onError: () => {
+      onError: (error: any) => {
         toast({
           title: "Error",
-          description: "Failed to update task",
+          description: error.response?.data?.message || "Failed to update task",
           variant: "destructive",
         })
       },
@@ -103,22 +133,30 @@ const BoardPage: React.FC = () => {
   )
 
   // Create task mutation
-  const createTaskMutation = useMutation((taskData: any) => tasksAPI.createTask(taskData), {
-    onSuccess: () => {
-      queryClient.invalidateQueries(["tasks", boardId])
-      toast({
-        title: "Success",
-        description: "Task created successfully",
+  const createTaskMutation = useMutation(
+    async (taskData: any) => {
+      return await tasksAPI.createTask({
+        ...taskData,
+        board_id: boardId,
       })
     },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to create task",
-        variant: "destructive",
-      })
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(["tasks", boardId])
+        toast({
+          title: "Success",
+          description: "Task created successfully",
+        })
+      },
+      onError: (error: any) => {
+        toast({
+          title: "Error",
+          description: error.response?.data?.message || "Failed to create task",
+          variant: "destructive",
+        })
+      },
     },
-  })
+  )
 
   // Transform tasks data into columns with constraints
   useEffect(() => {
@@ -158,8 +196,22 @@ const BoardPage: React.FC = () => {
       ]
 
       // Add sample constraints to tasks
-      const tasksWithConstraints = tasksData.data.map((task: Task) => ({
-        ...task,
+      const tasksWithConstraints = (Array.isArray(tasksData.data) ? tasksData.data : []).map((task: any) => ({
+        id: task.id?.toString() || "",
+        title: task.title || "Untitled Task",
+        description: task.description || "",
+        status: task.status || "todo",
+        priority: task.priority || "medium",
+        assignee: task.assignee
+          ? {
+              id: task.assignee.id?.toString() || "",
+              name: task.assignee.name || "Unknown",
+              avatar: task.assignee.avatar || "/placeholder.svg?height=32&width=32",
+            }
+          : undefined,
+        dueDate: task.due_date || task.dueDate,
+        comments: task.comments || [],
+        createdAt: task.created_at || task.createdAt || new Date().toISOString(),
         isLocked: task.priority === "high" && user?.role !== "admin",
         canMoveTo: task.priority === "high" ? ["todo", "in-progress", "review"] : undefined,
       }))
@@ -195,24 +247,32 @@ const BoardPage: React.FC = () => {
     // API call
     moveTaskMutation.mutate({
       taskId,
-      moveData: {
-        column_id: destColumn,
-        position,
-      },
+      columnId: destColumn,
+      position,
     })
   }
 
   const handleTaskUpdate = (updatedTask: Task) => {
     updateTaskMutation.mutate({
       taskId: updatedTask.id,
-      taskData: updatedTask,
+      taskData: {
+        title: updatedTask.title,
+        description: updatedTask.description,
+        priority: updatedTask.priority,
+        due_date: updatedTask.dueDate,
+        assignee_id: updatedTask.assignee?.id,
+      },
     })
   }
 
   const handleTaskCreate = (taskData: any) => {
     createTaskMutation.mutate({
-      ...taskData,
-      board_id: boardId,
+      title: taskData.title,
+      description: taskData.description || "",
+      priority: taskData.priority || "medium",
+      column_id: taskData.columnId,
+      due_date: taskData.dueDate,
+      assignee_id: taskData.assigneeId,
     })
   }
 
@@ -227,28 +287,69 @@ const BoardPage: React.FC = () => {
     )
   }
 
+  if (!board?.data && !boardLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Board Not Found</h2>
+            <p className="text-gray-600">The board you're looking for doesn't exist or you don't have access to it.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-
       <main className="container mx-auto px-4 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">{board?.data?.name || "Board"}</h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">{board?.data?.name || board?.name || "Board"}</h1>
           <p className="text-gray-600">
-            {board?.data?.description || "Manage your team's tasks with drag-and-drop simplicity"}
+            {board?.data?.description || board?.description || "Manage your team's tasks with drag-and-drop simplicity"}
           </p>
           <div className="mt-2 text-sm text-gray-500">
             Role: <span className="font-medium capitalize">{user?.role}</span>
+            {columns.length > 0 && (
+              <span className="ml-4">
+                Total Tasks:{" "}
+                <span className="font-medium">{columns.reduce((acc, col) => acc + col.tasks.length, 0)}</span>
+              </span>
+            )}
           </div>
         </div>
 
-        <KanbanBoard
-          columns={columns}
-          onTaskMove={handleTaskMove}
-          onTaskUpdate={handleTaskUpdate}
-          onTaskCreate={handleTaskCreate}
-          userRole={user?.role}
-        />
+        {columns.length > 0 ? (
+          <KanbanBoard
+            columns={columns}
+            onTaskMove={handleTaskMove}
+            onTaskUpdate={handleTaskUpdate}
+            onTaskCreate={handleTaskCreate}
+            userRole={user?.role}
+          />
+        ) : (
+          <div className="text-center py-12">
+            <div className="max-w-md mx-auto">
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No tasks yet</h3>
+              <p className="text-gray-600 mb-4">Get started by creating your first task.</p>
+              <button
+                onClick={() =>
+                  handleTaskCreate({
+                    title: "Sample Task",
+                    description: "This is a sample task to get you started",
+                    columnId: "todo",
+                    priority: "medium",
+                  })
+                }
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                Create Sample Task
+              </button>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   )

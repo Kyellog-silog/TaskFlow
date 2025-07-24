@@ -18,12 +18,12 @@ interface Task {
   description: string
   status: string
   priority: "low" | "medium" | "high"
-  assignee: {
+  assignee?: {
     id: string
     name: string
     avatar: string
   }
-  dueDate: string
+  dueDate?: string
   comments: Comment[]
   createdAt: string
 }
@@ -159,7 +159,7 @@ export function TaskModal({ task, isOpen, onClose, onUpdate }: TaskModalProps) {
               <label className="text-sm font-medium text-gray-700 mb-2 block">Due Date</label>
               <Input
                 type="date"
-                value={editedTask.dueDate}
+                value={editedTask.dueDate || ""}
                 onChange={(e) => setEditedTask({ ...editedTask, dueDate: e.target.value })}
               />
             </div>
@@ -169,16 +169,28 @@ export function TaskModal({ task, isOpen, onClose, onUpdate }: TaskModalProps) {
           <div>
             <label className="text-sm font-medium text-gray-700 mb-2 block">Assignee</label>
             <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-              <Avatar className="h-8 w-8">
-                <AvatarImage src={editedTask.assignee.avatar || "/placeholder.svg"} />
-                <AvatarFallback>
-                  {editedTask.assignee.name
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")}
-                </AvatarFallback>
-              </Avatar>
-              <span className="font-medium">{editedTask.assignee.name}</span>
+              {editedTask.assignee ? (
+                <>
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={editedTask.assignee.avatar || "/placeholder.svg"} />
+                    <AvatarFallback>
+                      {editedTask.assignee.name
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="font-medium">{editedTask.assignee.name}</span>
+                </>
+              ) : (
+                <>
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src="/placeholder.svg" />
+                    <AvatarFallback>NA</AvatarFallback>
+                  </Avatar>
+                  <span className="font-medium">Unassigned</span>
+                </>
+              )}
               <Badge className={getPriorityColor(editedTask.priority)}>{editedTask.priority}</Badge>
             </div>
           </div>

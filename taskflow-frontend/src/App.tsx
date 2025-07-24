@@ -12,7 +12,7 @@ import { LoadingSpinner } from "./components/LoadingSpinner"
 import { ErrorBoundary } from "./components/ErrorBoundary"
 import { useAuth } from "./contexts/AuthContext"
 import { useToast } from "./hooks/use-toast"
-import { setToastHandler } from "./services/api"
+import { setGlobalToast } from "./services/api"
 
 // Pages
 import LoginPage from "./pages/LoginPage"
@@ -45,7 +45,7 @@ const queryClient = new QueryClient({
 function App() {
   const toastHandler = useToast()
   React.useEffect(() => {
-    setToastHandler(toastHandler)
+    setGlobalToast(toastHandler)
   }, [toastHandler])
   return (
     <ErrorBoundary>

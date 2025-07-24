@@ -12,7 +12,6 @@ import { Separator } from "../components/ui/separator"
 import { useAuth } from "../contexts/AuthContext"
 import { useToast } from "../hooks/use-toast"
 import { User, Mail, Phone, MapPin, Calendar, Edit, Save, X, Camera, Shield, Bell, Lock } from "lucide-react"
-import * as React from "react"
 
 const ProfilePage = () => {
   const { user } = useAuth()

@@ -1,6 +1,6 @@
 "use client"
 
-import * as React from "react"
+import type React from "react"
 import { useDroppable } from "@dnd-kit/core"
 import { Plus, Lock, AlertTriangle, Users } from "lucide-react"
 import { Button } from "./ui/button"
@@ -82,8 +82,8 @@ export const DroppableColumn: React.FC<DroppableColumnProps> = ({
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center space-x-2">
             <h2 className="font-semibold text-gray-900">{column.title}</h2>
-            {column.isLocked && <Lock className="h-4 w-4 text-gray-500" />}
-            {isAtCapacity && <AlertTriangle className="h-4 w-4 text-red-500" />}
+            {column.isLocked && <span title="Column is locked"><Lock className="h-4 w-4 text-gray-500" /></span>}
+            {isAtCapacity && <span title="Column at capacity"><AlertTriangle className="h-4 w-4 text-red-500" /></span>}
           </div>
           <div className="flex items-center space-x-2">
             <Badge variant="secondary">

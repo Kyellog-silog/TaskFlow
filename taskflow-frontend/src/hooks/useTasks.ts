@@ -4,7 +4,7 @@ import { tasksAPI } from "../services/api"
 export const useTasks = (boardId?: string) => {
   const queryClient = useQueryClient()
 
-  const tasksQuery = useQuery(["tasks", boardId], () => tasksAPI.getTasks(boardId ? { board_id: boardId } : {}), {
+  const tasksQuery = useQuery(["tasks", boardId], () => tasksAPI.getTasks(boardId), {
     enabled: !!boardId,
   })
 

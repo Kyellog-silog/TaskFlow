@@ -1,19 +1,6 @@
+import axios, { type AxiosResponse, type AxiosError } from "axios"
 
-import axios from "axios"
-
-let toastHandler = {
-  toast: (props: any) => {
-    console.error("Toast not initialized", props)
-  },
-}
-
-export const setToastHandler = (handler: any) => {
-  toastHandler = handler
-}
-
-
-const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000/api";
-const SANCTUM_BASE_URL = process.env.REACT_APP_SANCTUM_URL || "http://localhost:8000";
+const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000"
 
 // Create axios instance
 const api = axios.create({
@@ -23,143 +10,224 @@ const api = axios.create({
   headers: {
     "Content-Type": "application/json",
     Accept: "application/json",
-    "X-Requested-With": "XMLHttpRequest",
   },
-});
+})
 
-api.interceptors.request.use(async (config) => {
-  if (config.url?.includes("sanctum/csrf-cookie")) return config;
-  
-  // Ensure CSRF token exists
-  if (!document.cookie.includes("XSRF-TOKEN")) {
-    await axios.get(`${SANCTUM_BASE_URL}/sanctum/csrf-cookie`, {
-      withCredentials: true,
-    });
-  }
-  
-  // Add auth token if exists
-  const token = localStorage.getItem("token");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  
-  return config;
-});
+// Global toast handler - will be set by App component
+let globalToast: any = null
 
-// Handle session expiration
-api.interceptors.response.use(
-  (response) => response,
+export const setGlobalToast = (toast: any) => {
+  globalToast = toast
+}
+
+// Request interceptor - no longer need to add auth token as we're using cookies
+api.interceptors.request.use(
+  (config) => {
+    // No need to add Authorization header with token
+    // Cookies will be sent automatically with withCredentials: true
+    return config
+  },
   (error) => {
-    // Create a default error message
-    let errorTitle = "Error"
-    let errorMessage = "An unexpected error occurred"
-
-    // Handle specific error status codes
-    if (error.response) {
-      const { status } = error.response
-
-      switch (status) {
-        case 401: // Unauthorized
-          errorTitle = "Session Expired"
-          errorMessage = "Your session has expired. Please log in again."
-          // Store the current path to redirect back after login
-          localStorage.setItem("redirectAfterLogin", window.location.pathname)
-          // Remove token but don't reload
-          localStorage.removeItem("token")
-          // We'll handle the redirect in the auth context
-          break
-
-        case 403: // Forbidden
-          errorTitle = "Access Denied"
-          errorMessage = "You don't have permission to perform this action"
-          break
-
-        case 404: // Not Found
-          errorTitle = "Not Found"
-          errorMessage = "The requested resource was not found"
-          break
-
-        case 419: // CSRF token mismatch
-          errorTitle = "Session Expired"
-          errorMessage = "Your session has expired. Please refresh the page."
-          // Don't reload, just show the message
-          break
-
-        case 422: // Validation error
-          errorTitle = "Validation Error"
-          errorMessage = "Please check your input and try again"
-          // If we have validation errors, show them
-          if (error.response.data && error.response.data.errors) {
-            const validationErrors = Object.values(error.response.data.errors).flat()
-            if (validationErrors.length > 0) {
-              errorMessage = validationErrors.join("\n")
-            }
-          }
-          break
-
-        case 429: // Too Many Requests
-          errorTitle = "Too Many Requests"
-          errorMessage = "Please slow down and try again later"
-          break
-
-        case 500: // Server Error
-          errorTitle = "Server Error"
-          errorMessage = "Something went wrong on our end. Please try again later."
-          break
-
-        default:
-          errorTitle = `Error ${status}`
-          errorMessage = error.response.data?.message || "An error occurred"
-      }
-    } else if (error.request) {
-      // The request was made but no response was received
-      errorTitle = "Network Error"
-      errorMessage = "Unable to connect to the server. Please check your internet connection."
-    }
-
-    // Show toast notification with the error
-    toastHandler.toast({
-      title: errorTitle,
-      description: errorMessage,
-      variant: "destructive",
-    })
-
-    // Return the rejected promise
     return Promise.reject(error)
   },
 )
 
-// Auth API
+// Response interceptor for error handling
+api.interceptors.response.use(
+  (response: AxiosResponse) => {
+    return response
+  },
+  (error: AxiosError) => {
+    const status = error.response?.status
+    const data = error.response?.data as any
+
+    // Handle different error types
+    switch (status) {
+      case 401:
+        // Unauthorized - token expired or invalid
+        if (globalToast) {
+          globalToast({
+            title: "Session Expired",
+            description: "Please log in again to continue.",
+            variant: "destructive",
+          })
+        }
+        // Save current path for redirect after login
+        const currentPath = window.location.pathname
+        if (currentPath !== "/login" && currentPath !== "/register") {
+          localStorage.setItem("redirectPath", currentPath)
+        }
+        localStorage.removeItem("token")
+        // Don't redirect here, let the auth context handle it
+        break
+
+      case 403:
+        // Forbidden
+        if (globalToast) {
+          globalToast({
+            title: "Access Denied",
+            description: "You don't have permission to perform this action.",
+            variant: "destructive",
+          })
+        }
+        break
+
+      case 404:
+        // Not found
+        if (globalToast) {
+          globalToast({
+            title: "Not Found",
+            description: "The requested resource was not found.",
+            variant: "destructive",
+          })
+        }
+        break
+
+      case 419:
+        // CSRF token mismatch
+        if (globalToast) {
+          globalToast({
+            title: "Session Error",
+            description: "Your session has expired. Please refresh the page and try again.",
+            variant: "destructive",
+          })
+        }
+        break
+
+      case 422:
+        // Validation errors
+        if (data?.errors) {
+          const errorMessages = Object.values(data.errors).flat().join(", ")
+          if (globalToast) {
+            globalToast({
+              title: "Validation Error",
+              description: errorMessages,
+              variant: "destructive",
+            })
+          }
+        } else if (globalToast) {
+          globalToast({
+            title: "Validation Error",
+            description: data?.message || "Please check your input and try again.",
+            variant: "destructive",
+          })
+        }
+        break
+
+      case 429:
+        // Too many requests
+        if (globalToast) {
+          globalToast({
+            title: "Too Many Requests",
+            description: "Please wait a moment before trying again.",
+            variant: "destructive",
+          })
+        }
+        break
+
+      case 500:
+        // Server error
+        if (globalToast) {
+          globalToast({
+            title: "Server Error",
+            description: "Something went wrong on our end. Please try again later.",
+            variant: "destructive",
+          })
+        }
+        break
+
+      default:
+        // Network or other errors
+        if (!error.response) {
+          // Network error
+          if (globalToast) {
+            globalToast({
+              title: "Connection Error",
+              description: "Unable to connect to the server. Please check your internet connection.",
+              variant: "destructive",
+            })
+          }
+        } else if (globalToast) {
+          // Other HTTP errors
+          globalToast({
+            title: "Error",
+            description: data?.message || "An unexpected error occurred.",
+            variant: "destructive",
+          })
+        }
+        break
+    }
+
+    return Promise.reject(error)
+  },
+)
+
+// Auth API - Using Sanctum cookie-based authentication
 export const authAPI = {
+  // Get CSRF cookie from Sanctum
+  getCsrfCookie: async () => {
+    await axios.get(`${API_BASE_URL.replace('/api', '')}/sanctum/csrf-cookie`, {
+      withCredentials: true,
+    })
+  },
+
   login: async (email: string, password: string) => {
-    const response = await api.post("/login", { email, password })
+    // First get the CSRF cookie
+    await authAPI.getCsrfCookie()
+    // Then attempt login
+    const response = await api.post("/auth/login", { email, password })
     return response.data
   },
 
-  register: async (name: string, email: string, password: string, passwordConfirmation: string) => {
-    const response = await api.post("/register", { 
-      name, 
-      email, 
+  register: async (name: string, email: string, password: string, password_confirmation: string) => {
+    // First get the CSRF cookie
+    await authAPI.getCsrfCookie()
+    // Then attempt registration
+    const response = await api.post("/auth/register", {
+      name,
+      email,
       password,
-      password_confirmation: passwordConfirmation
-    });
-    return response.data;
+      password_confirmation,
+    })
+    return response.data
   },
 
   logout: async () => {
-    await api.post("/logout")
+    const response = await api.post("/auth/logout")
+    return response.data
   },
 
   getUser: async () => {
     const response = await api.get("/user")
     return response.data
   },
+
+  forgotPassword: async (email: string) => {
+    const response = await api.post("/auth/forgot-password", { email })
+    return response.data
+  },
+
+  resetPassword: async (token: string, email: string, password: string, password_confirmation: string) => {
+    const response = await api.post("/auth/reset-password", {
+      token,
+      email,
+      password,
+      password_confirmation,
+    })
+    return response.data
+  },
+
+  resendEmailVerification: async () => {
+    const response = await api.post("/auth/email/verification-notification")
+    return response.data
+  },
 }
 
 // Tasks API
 export const tasksAPI = {
-  getTasks: async (params?: any) => {
-    const response = await api.get("/tasks", { params })
+  getTasks: async (boardId?: string) => {
+    const url = boardId ? `/tasks?board_id=${boardId}` : "/tasks"
+    const response = await api.get(url)
     return response.data
   },
 
@@ -178,13 +246,36 @@ export const tasksAPI = {
     return response.data
   },
 
-  moveTask: async (id: string, moveData: any) => {
-    const response = await api.post(`/tasks/${id}/move`, moveData)
+  deleteTask: async (id: string) => {
+    const response = await api.delete(`/tasks/${id}`)
     return response.data
   },
 
-  deleteTask: async (id: string) => {
-    const response = await api.delete(`/tasks/${id}`)
+  moveTask: async (id: string, columnId: string, position: number) => {
+    const response = await api.patch(`/tasks/${id}/move`, {
+      column_id: columnId,
+      position,
+    })
+    return response.data
+  },
+
+  assignTask: async (id: string, userId: string) => {
+    const response = await api.post(`/tasks/${id}/assign`, { user_id: userId })
+    return response.data
+  },
+
+  unassignTask: async (id: string) => {
+    const response = await api.delete(`/tasks/${id}/assign`)
+    return response.data
+  },
+
+  duplicateTask: async (id: string) => {
+    const response = await api.post(`/tasks/${id}/duplicate`)
+    return response.data
+  },
+
+  getTaskActivities: async (id: string) => {
+    const response = await api.get(`/tasks/${id}/activities`)
     return response.data
   },
 }
@@ -205,6 +296,16 @@ export const boardsAPI = {
     const response = await api.post("/boards", boardData)
     return response.data
   },
+
+  updateBoard: async (id: string, boardData: any) => {
+    const response = await api.put(`/boards/${id}`, boardData)
+    return response.data
+  },
+
+  deleteBoard: async (id: string) => {
+    const response = await api.delete(`/boards/${id}`)
+    return response.data
+  },
 }
 
 // Teams API
@@ -221,6 +322,31 @@ export const teamsAPI = {
 
   createTeam: async (teamData: any) => {
     const response = await api.post("/teams", teamData)
+    return response.data
+  },
+
+  updateTeam: async (id: string, teamData: any) => {
+    const response = await api.put(`/teams/${id}`, teamData)
+    return response.data
+  },
+
+  deleteTeam: async (id: string) => {
+    const response = await api.delete(`/teams/${id}`)
+    return response.data
+  },
+
+  addMember: async (teamId: string, email: string, role = "member") => {
+    const response = await api.post(`/teams/${teamId}/members`, { email, role })
+    return response.data
+  },
+
+  removeMember: async (teamId: string, userId: string) => {
+    const response = await api.delete(`/teams/${teamId}/members/${userId}`)
+    return response.data
+  },
+
+  updateMemberRole: async (teamId: string, userId: string, role: string) => {
+    const response = await api.patch(`/teams/${teamId}/members/${userId}`, { role })
     return response.data
   },
 }

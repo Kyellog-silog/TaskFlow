@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -38,14 +39,14 @@ class AuthController extends Controller
 
         event(new Registered($user));
 
-        $token = $user->createToken('auth_token')->plainTextToken;
+        // Log the user in to create a session
+        Auth::login($user);
+        $request->session()->regenerate();
 
         return response()->json([
             'success' => true,
             'data' => [
-                'user' => $user,
-                'token' => $token,
-                'token_type' => 'Bearer',
+                'user' => $user
             ]
         ], 201);
     }
@@ -73,24 +74,23 @@ class AuthController extends Controller
             ]);
         }
 
-        // Revoke all existing tokens
-        $user->tokens()->delete();
-
-        $token = $user->createToken('auth_token')->plainTextToken;
+        // Log the user in to create a session
+        Auth::login($user);
+        $request->session()->regenerate();
 
         return response()->json([
             'success' => true,
             'data' => [
-                'user' => $user,
-                'token' => $token,
-                'token_type' => 'Bearer',
+                'user' => $user
             ]
         ]);
     }
 
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()->delete();
+        Auth::guard('web')->logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
 
         return response()->json([
             'success' => true,
@@ -108,20 +108,13 @@ class AuthController extends Controller
 
     public function refresh(Request $request): JsonResponse
     {
-        $user = $request->user();
+        // For cookie-based auth, we just need to regenerate the session
+        $request->session()->regenerate();
         
-        // Revoke current token
-        $request->user()->currentAccessToken()->delete();
-        
-        // Create new token
-        $token = $user->createToken('auth_token')->plainTextToken;
-
         return response()->json([
             'success' => true,
             'data' => [
-                'user' => $user,
-                'token' => $token,
-                'token_type' => 'Bearer',
+                'user' => $request->user()
             ]
         ]);
     }

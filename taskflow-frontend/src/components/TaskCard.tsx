@@ -14,12 +14,12 @@ interface Task {
   description: string
   status: string
   priority: "low" | "medium" | "high"
-  assignee: {
+  assignee?: {
     id: string
     name: string
     avatar: string
   }
-  dueDate: string
+  dueDate?: string
   comments: any[]
   createdAt: string
   isLocked?: boolean
@@ -129,16 +129,28 @@ export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
           </div>
 
           <div className="flex items-center justify-between">
-            <Avatar className="h-6 w-6">
-              <AvatarImage src={task.assignee.avatar || "/placeholder.svg"} />
-              <AvatarFallback className="text-xs">
-                {task.assignee.name
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")}
-              </AvatarFallback>
-            </Avatar>
-            <span className="text-xs text-gray-500">{task.assignee.name}</span>
+            {task.assignee ? (
+              <>
+                <Avatar className="h-6 w-6">
+                  <AvatarImage src={task.assignee.avatar || "/placeholder.svg"} />
+                  <AvatarFallback className="text-xs">
+                    {task.assignee.name
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="text-xs text-gray-500">{task.assignee.name}</span>
+              </>
+            ) : (
+              <>
+                <Avatar className="h-6 w-6">
+                  <AvatarImage src="/placeholder.svg" />
+                  <AvatarFallback className="text-xs">NA</AvatarFallback>
+                </Avatar>
+                <span className="text-xs text-gray-500">Unassigned</span>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>

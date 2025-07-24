@@ -1,8 +1,6 @@
 "use client"
 
-import * as React from "react"
-
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
@@ -16,25 +14,41 @@ const LoginPage = () => {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const { login } = useAuth()
+  const { user, login } = useAuth()
   const { toast } = useToast()
   const navigate = useNavigate()
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      console.log("User found, redirecting to dashboard:", user)
+      navigate("/dashboard", { replace: true })
+    }
+  }, [user, navigate])
+
+  const handleSubmit = async (e: any) => {
     e.preventDefault()
     setIsLoading(true)
 
     try {
+      console.log("Attempting login...")
       await login(email, password)
+
       toast({
         title: "Success",
-        description: "Logged in successfully",
+        description: "Welcome back!",
       })
-      navigate("/dashboard")
+
+      // The useEffect above should handle the redirect when user state updates
+      // But we can also try to navigate here as a fallback
+      setTimeout(() => {
+        navigate("/dashboard", { replace: true })
+      }, 100)
     } catch (error: any) {
+      console.error("Login failed:", error)
       toast({
         title: "Error",
-        description: error.response?.data?.message || "Login failed",
+        description: error.response?.data?.message || error.message || "Login failed",
         variant: "destructive",
       })
     } finally {
@@ -126,9 +140,19 @@ const LoginPage = () => {
                 </div>
 
                 <div className="text-sm">
-                  <a href="#" className="font-medium text-blue-600 hover:text-blue-500">
+                  <button
+                    type="button"
+                    className="font-medium text-blue-600 hover:text-blue-500"
+                    onClick={() => {
+                      // TODO: Implement forgot password functionality
+                      toast({
+                        title: "Coming Soon",
+                        description: "Forgot password functionality will be available soon.",
+                      })
+                    }}
+                  >
                     Forgot your password?
-                  </a>
+                  </button>
                 </div>
               </div>
 
