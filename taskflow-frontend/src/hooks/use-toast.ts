@@ -9,14 +9,14 @@ interface Toast {
 }
 
 export const useToast = () => {
-  const [toasts, setToasts] = useState<Toast[]>([])
+  const [toasts, setToast] = useState<Toast[]>([])
 
   const toast = (newToast: Toast) => {
-    setToasts((prev) => [...prev, newToast])
+    setToast((prev) => [...prev, newToast])
 
     // Auto remove after 5 seconds
     setTimeout(() => {
-      setToasts((prev) => prev.slice(1))
+      setToast((prev) => prev.slice(1))
     }, 5000)
   }
 

@@ -95,7 +95,7 @@ const TeamsPage = () => {
 
           <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button data-create-team-button>
                 <Plus className="h-4 w-4 mr-2" />
                 Create Team
               </Button>
@@ -258,7 +258,7 @@ const TeamsPage = () => {
             <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No teams yet</h3>
             <p className="text-gray-600 mb-4">Create your first team to start collaborating with others.</p>
-            <Button onClick={() => setIsCreateModalOpen(true)}>
+            <Button onClick={() => setIsCreateModalOpen(true)} data-create-team-button>
               <Plus className="h-4 w-4 mr-2" />
               Create Your First Team
             </Button>

@@ -23,7 +23,7 @@ class Board extends Model
 
     public function team(): BelongsTo
     {
-        return $this->belongsTo(Team::class);
+        return $this->belongsTo(Team::class)->withDefault();
     }
 
     public function createdBy(): BelongsTo
@@ -43,18 +43,28 @@ class Board extends Model
 
     public function scopeForUser($query, $userId)
     {
-        return $query->whereHas('team', function ($q) use ($userId) {
-            $q->forUser($userId);
+        return $query->where(function($q) use ($userId) {
+        $q->where('created_by', $userId)
+            ->whereNull('team_id')
+            ->orWhereHas('team', function ($q) use ($userId) {
+                $q->forUser($userId);
+            });
         });
     }
 
     public function canUserAccess(User $user): bool
     {
+        if (!$this->team_id){
+            return $this->created_by == $user->id;
+        }
         return $this->team->isMember($user);
     }
 
     public function canUserManage(User $user): bool
     {
+        if (!$this->team_id){
+            return $this->created_by == $user->id;
+        }
         return $this->team->isAdmin($user) || $this->createdBy?->id === $user->id;
     }
 

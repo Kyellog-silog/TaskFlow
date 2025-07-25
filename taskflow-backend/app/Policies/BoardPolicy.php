@@ -14,7 +14,7 @@ class BoardPolicy
 
     public function create(User $user): bool
     {
-        return true; // Any authenticated user can create a board (if they have team access)
+        return true; // Any authenticated user can create a board
     }
 
     public function update(User $user, Board $board): bool

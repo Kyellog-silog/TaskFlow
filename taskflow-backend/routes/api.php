@@ -59,6 +59,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Board routes
     Route::apiResource('boards', BoardController::class);
     Route::get('/teams/{team}/boards', [BoardController::class, 'byTeam']);
+    Route::get('/boards', [BoardController::class, 'index']);
 
     // Task routes
     Route::apiResource('tasks', TaskController::class);

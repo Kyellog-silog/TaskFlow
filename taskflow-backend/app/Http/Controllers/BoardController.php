@@ -14,15 +14,17 @@ class BoardController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $boards = Board::forUser($request->user()->id)
-                      ->with(['team', 'createdBy', 'columns.tasks'])
-                      ->withCount(['tasks'])
-                      ->get();
+        $user = $request->user();
+        $boards = Board::forUser($user->id)
+            ->with(['createdBy', 'columns'])
+            ->withCount(['tasks'])
+            ->get();
 
         return response()->json([
             'success' => true,
             'data' => $boards
         ]);
+        
     }
 
     public function store(Request $request): JsonResponse
@@ -30,18 +32,21 @@ class BoardController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string|max:1000',
-            'team_id' => 'required|exists:teams,id',
+            'team_id' => 'nullable|exists:teams,id',
+            'columns' => 'somtimes|array',
         ]);
 
-        $team = Team::findOrFail($validated['team_id']);
-        Gate::authorize('manage', $team);
+        if (!empty($validated['team_id'])) {
+            $team = Team::findOrFail($validated('team_id'));
+            Gate::authorize('view', $team);
+        }
 
         DB::beginTransaction();
         try {
             $board = Board::create([
                 'name' => $validated['name'],
                 'description' => $validated['description'] ?? null,
-                'team_id' => $validated['team_id'],
+                'team_id' => $validated['team_id'] ?? null,
                 'created_by' => $request->user()->id,
             ]);
 
