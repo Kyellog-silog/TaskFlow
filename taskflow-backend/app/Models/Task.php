@@ -7,11 +7,17 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Auth;
 
 class Task extends Model
 {
     use HasFactory, SoftDeletes;
 
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array
+     */
     protected $fillable = [
         'title',
         'description',
@@ -25,152 +31,165 @@ class Task extends Model
         'completed_at'
     ];
 
+    /**
+     * The attributes that should be cast.
+     *
+     * @var array
+     */
     protected $casts = [
         'due_date' => 'date',
         'completed_at' => 'datetime',
         'position' => 'integer',
     ];
 
+    /**
+     * The relationships that should be eager loaded.
+     *
+     * @var array
+     */
     protected $with = ['assignee', 'createdBy'];
 
+    /**
+     * The accessors to append to the model's array form.
+     *
+     * @var array
+     */
     protected $appends = ['is_overdue', 'is_completed', 'status'];
 
-    // Relationships
+    /**
+     * Get the board that owns the task.
+     *
+     * @return BelongsTo
+     */
     public function board(): BelongsTo
     {
-        return $this->belongsTo(Board::class);
+        return $this->belongsTo(Board::class, 'board_id', 'id');
     }
 
+    /**
+     * Get the column that owns the task.
+     *
+     * @return BelongsTo
+     */
     public function column(): BelongsTo
     {
-        return $this->belongsTo(BoardColumn::class, 'column_id');
+        return $this->belongsTo(BoardColumn::class, 'column_id', 'id');
     }
 
+    /**
+     * Get the user assigned to the task.
+     *
+     * @return BelongsTo
+     */
     public function assignee(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'assignee_id');
+        return $this->belongsTo(User::class, 'assignee_id', 'id');
     }
 
+    /**
+     * Get the user who created the task.
+     *
+     * @return BelongsTo
+     */
     public function createdBy(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'created_by');
+        return $this->belongsTo(User::class, 'created_by', 'id');
     }
 
+    /**
+     * Get the comments for the task.
+     *
+     * @return HasMany
+     */
     public function comments(): HasMany
     {
-        return $this->hasMany(TaskComment::class)->with('user')->latest();
+        return $this->hasMany(TaskComment::class, 'task_id', 'id')->latest();
     }
 
+    /**
+     * Get the attachments for the task.
+     *
+     * @return HasMany
+     */
     public function attachments(): HasMany
     {
-        return $this->hasMany(TaskAttachment::class);
+        return $this->hasMany(TaskAttachment::class, 'task_id', 'id');
     }
 
+    /**
+     * Get the activities for the task.
+     *
+     * @return HasMany
+     */
     public function activities(): HasMany
     {
-        return $this->hasMany(TaskActivity::class)->with('user')->latest();
+        return $this->hasMany(TaskActivity::class, 'task_id', 'id')->latest();
     }
 
-    // Scopes
+    /**
+     * Scope a query to only include tasks for a specific board.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     * @param int|string $boardId
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
     public function scopeByBoard($query, $boardId)
     {
         return $query->where('board_id', $boardId);
     }
 
+    /**
+     * Scope a query to only include tasks for a specific column.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     * @param int|string $columnId
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
     public function scopeByColumn($query, $columnId)
     {
         return $query->where('column_id', $columnId);
     }
 
+    /**
+     * Scope a query to only include tasks assigned to a specific user.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     * @param int|string $assigneeId
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
     public function scopeByAssignee($query, $assigneeId)
     {
         return $query->where('assignee_id', $assigneeId);
     }
 
+    /**
+     * Scope a query to only include tasks with a specific priority.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     * @param string $priority
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
     public function scopeByPriority($query, $priority)
     {
         return $query->where('priority', $priority);
     }
 
-    public function scopeByStatus($query, $status)
-    {
-        return $query->whereHas('column', function ($q) use ($status) {
-            $q->where('name', $status);
-        });
-    }
-
-    public function scopeDueSoon($query, $days = 7)
-    {
-        return $query->where('due_date', '<=', now()->addDays($days))
-                    ->where('due_date', '>=', now())
-                    ->whereNull('completed_at');
-    }
-
-    public function scopeOverdue($query)
-    {
-        return $query->where('due_date', '<', now())
-                    ->whereNull('completed_at');
-    }
-
-    public function scopeCompleted($query)
-    {
-        return $query->whereNotNull('completed_at');
-    }
-
-    public function scopeIncomplete($query)
-    {
-        return $query->whereNull('completed_at');
-    }
-
-    public function scopeHighPriority($query)
-    {
-        return $query->where('priority', 'high');
-    }
-
+    /**
+     * Scope a query to order tasks by position.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
     public function scopeOrderedByPosition($query)
     {
         return $query->orderBy('position');
     }
 
-    public function scopeOrderedByDueDate($query)
-    {
-        return $query->orderBy('due_date');
-    }
-
-    public function scopeOrderedByPriority($query)
-    {
-        return $query->orderByRaw("FIELD(priority, 'high', 'medium', 'low')");
-    }
-
-    public function scopeForUser($query, $userId)
-    {
-        return $query->whereHas('board.team', function ($q) use ($userId) {
-            $q->where('owner_id', $userId)
-              ->orWhereHas('members', function ($memberQuery) use ($userId) {
-                  $memberQuery->where('user_id', $userId);
-              });
-        });
-    }
-
-    public function scopeAssignedToUser($query, $userId)
-    {
-        return $query->where('assignee_id', $userId);
-    }
-
-    public function scopeCreatedByUser($query, $userId)
-    {
-        return $query->where('created_by', $userId);
-    }
-
-    public function scopeSearch($query, $search)
-    {
-        return $query->where(function ($q) use ($search) {
-            $q->where('title', 'like', "%{$search}%")
-              ->orWhere('description', 'like', "%{$search}%");
-        });
-    }
-
-    // Accessors
+    /**
+     * Get if the task is overdue.
+     *
+     * @return bool
+     */
     public function getIsOverdueAttribute(): bool
     {
         return $this->due_date && 
@@ -178,266 +197,253 @@ class Task extends Model
                !$this->completed_at;
     }
 
+    /**
+     * Get if the task is completed.
+     *
+     * @return bool
+     */
     public function getIsCompletedAttribute(): bool
     {
         return !is_null($this->completed_at);
     }
 
+    /**
+     * Get the status of the task based on its column.
+     *
+     * @return string
+     */
     public function getStatusAttribute(): string
     {
         return $this->column ? strtolower(str_replace(' ', '-', $this->column->name)) : 'unknown';
     }
 
-    public function getDaysUntilDueAttribute(): ?int
+    /**
+     * Mark a task as completed.
+     *
+     * @param User|null $user The user completing the task
+     * @return void
+     */
+    public function markAsCompleted(?User $user = null): void
     {
-        if (!$this->due_date) {
-            return null;
+        $this->update(['completed_at' => now()]);
+        
+        // Log activity
+        $this->activities()->create([
+            'user_id' => $user ? $user->id : optional(Auth::user())->id,
+            'action' => 'completed',
+            'description' => 'Task marked as completed'
+        ]);
+    }
+
+    /**
+     * Mark a task as incomplete.
+     *
+     * @param User|null $user The user reopening the task
+     * @return void
+     */
+    public function markAsIncomplete(?User $user = null): void
+    {
+        $this->update(['completed_at' => null]);
+        
+        // Log activity
+        $this->activities()->create([
+            'user_id' => $user ? $user->id : optional(Auth::user())->id,
+            'action' => 'reopened',
+            'description' => 'Task marked as incomplete'
+        ]);
+    }
+
+    /**
+     * Move a task to a different column.
+     *
+     * @param int|string $columnId
+     * @param int $position
+     * @param User|null $user
+     * @return bool
+     */
+    public function moveToColumn($columnId, int $position, ?User $user = null): bool
+    {
+        $oldColumnId = $this->column_id;
+        $oldPosition = $this->position;
+        
+        // If not changing columns, just update position
+        if ($oldColumnId == $columnId) {
+            return $this->movePosition($position, $user);
         }
-
-        return now()->diffInDays($this->due_date, false);
+        
+        // Update positions in the old column
+        Task::where('column_id', $oldColumnId)
+            ->where('position', '>', $oldPosition)
+            ->decrement('position');
+        
+        // Make space in the new column
+        Task::where('column_id', $columnId)
+            ->where('position', '>=', $position)
+            ->increment('position');
+        
+        // Update task with new column and position
+        $this->update([
+            'column_id' => $columnId,
+            'position' => $position
+        ]);
+        
+        // Log activity
+        $newColumn = BoardColumn::find($columnId);
+        $this->activities()->create([
+            'user_id' => $user ? $user->id : optional(Auth::user())->id,
+            'action' => 'moved',
+            'description' => "Task moved to {$newColumn->name}",
+            'old_values' => ['column_id' => $oldColumnId, 'position' => $oldPosition],
+            'new_values' => ['column_id' => $columnId, 'position' => $position]
+        ]);
+        
+        return true;
     }
 
-    public function getTimeSpentAttribute(): ?int
+    /**
+     * Move a task to a different position in the same column.
+     *
+     * @param int $newPosition
+     * @param User|null $user
+     * @return bool
+     */
+    public function movePosition(int $newPosition, ?User $user = null): bool
     {
-        // Calculate time spent based on activities or other logic
-        // This is a placeholder - you might want to implement time tracking
-        return null;
-    }
-
-    public function getProgressPercentageAttribute(): int
-    {
-        // Calculate progress based on column position or completion status
-        if ($this->is_completed) {
-            return 100;
+        $oldPosition = $this->position;
+        
+        // If position didn't change, do nothing
+        if ($oldPosition === $newPosition) {
+            return true;
         }
-
-        // You could implement more sophisticated progress calculation
-        // based on column positions, subtasks, etc.
-        $columns = $this->board->columns()->ordered()->get();
-        $currentColumnIndex = $columns->search(function ($column) {
-            return $column->id === $this->column_id;
-        });
-
-        if ($currentColumnIndex === false) {
-            return 0;
+        
+        // Moving up (lower position number)
+        if ($newPosition < $oldPosition) {
+            Task::where('column_id', $this->column_id)
+                ->whereBetween('position', [$newPosition, $oldPosition - 1])
+                ->increment('position');
+        } 
+        // Moving down (higher position number)
+        else {
+            Task::where('column_id', $this->column_id)
+                ->whereBetween('position', [$oldPosition + 1, $newPosition])
+                ->decrement('position');
         }
-
-        return (int) (($currentColumnIndex / ($columns->count() - 1)) * 100);
+        
+        // Update task position
+        $this->update(['position' => $newPosition]);
+        
+        // Log activity
+        $this->activities()->create([
+            'user_id' => $user ? $user->id : optional(Auth::user())->id,
+            'action' => 'reordered',
+            'description' => 'Task position changed',
+            'old_values' => ['position' => $oldPosition],
+            'new_values' => ['position' => $newPosition]
+        ]);
+        
+        return true;
     }
 
-    // Methods
-    public function isOverdue(): bool
+    /**
+     * Assign a task to a user.
+     *
+     * @param User $assignee
+     * @param User|null $assigner
+     * @return void
+     */
+    public function assignTo(User $assignee, ?User $assigner = null): void
     {
-        return $this->is_overdue;
+        $oldAssigneeId = $this->assignee_id;
+        $this->update(['assignee_id' => $assignee->id]);
+        
+        // Log activity
+        $this->activities()->create([
+            'user_id' => $assigner ? $assigner->id : optional(Auth::user())->id,
+            'action' => 'assigned',
+            'description' => "Task assigned to {$assignee->name}",
+            'old_values' => ['assignee_id' => $oldAssigneeId],
+            'new_values' => ['assignee_id' => $assignee->id]
+        ]);
     }
 
-    public function isCompleted(): bool
+    /**
+     * Unassign a task.
+     *
+     * @param User|null $actor
+     * @return void
+     */
+    public function unassign(?User $actor = null): void
     {
-        return $this->is_completed;
+        $oldAssigneeId = $this->assignee_id;
+        $this->update(['assignee_id' => null]);
+        
+        // Log activity
+        $this->activities()->create([
+            'user_id' => $actor ? $actor->id : optional(Auth::user())->id,
+            'action' => 'unassigned',
+            'description' => "Task unassigned",
+            'old_values' => ['assignee_id' => $oldAssigneeId],
+            'new_values' => ['assignee_id' => null]
+        ]);
     }
 
-    public function isDueSoon($days = 7): bool
-    {
-        return $this->due_date && 
-               $this->due_date->isBetween(now(), now()->addDays($days)) &&
-               !$this->completed_at;
-    }
-
+    /**
+     * Check if a task can be edited by a user.
+     *
+     * @param User $user
+     * @return bool
+     */
     public function canBeEditedBy(User $user): bool
     {
         return $this->board->canUserAccess($user);
     }
 
+    /**
+     * Check if a task can be deleted by a user.
+     *
+     * @param User $user
+     * @return bool
+     */
     public function canBeDeletedBy(User $user): bool
     {
         return $this->board->canUserManage($user) || 
                $this->created_by === $user->id;
     }
 
-    public function canBeAssignedBy(User $user): bool
-    {
-        return $this->board->canUserAccess($user);
-    }
-
-    public function markAsCompleted(User $user = null): void
-    {
-        $this->update(['completed_at' => now()]);
-
-        // Log activity
-        $this->activities()->create([
-            'user_id' => $user ? $user->id : auth()->id(),
-            'action' => 'completed',
-            'description' => 'Task marked as completed'
-        ]);
-    }
-
-    public function markAsIncomplete(User $user = null): void
-    {
-        $this->update(['completed_at' => null]);
-
-        // Log activity
-        $this->activities()->create([
-            'user_id' => $user ? $user->id : auth()->id(),
-            'action' => 'reopened',
-            'description' => 'Task marked as incomplete'
-        ]);
-    }
-
-    public function assignTo(User $assignee, User $assigner = null): void
-    {
-        $oldAssignee = $this->assignee;
-        
-        $this->update(['assignee_id' => $assignee->id]);
-
-        // Log activity
-        $this->activities()->create([
-            'user_id' => $assigner ? $assigner->id : auth()->id(),
-            'action' => 'assigned',
-            'description' => "Task assigned to {$assignee->name}",
-            'old_values' => ['assignee_id' => $oldAssignee?->id],
-            'new_values' => ['assignee_id' => $assignee->id]
-        ]);
-    }
-
-    public function unassign(User $user = null): void
-    {
-        $oldAssignee = $this->assignee;
-        
-        $this->update(['assignee_id' => null]);
-
-        // Log activity
-        $this->activities()->create([
-            'user_id' => $user ? $user->id : auth()->id(),
-            'action' => 'unassigned',
-            'description' => "Task unassigned from {$oldAssignee?->name}",
-            'old_values' => ['assignee_id' => $oldAssignee?->id],
-            'new_values' => ['assignee_id' => null]
-        ]);
-    }
-
-    public function moveToColumn(BoardColumn $column, int $position = null, User $user = null): void
-    {
-        $oldColumn = $this->column;
-        $oldPosition = $this->position;
-
-        // If no position specified, put at end
-        if ($position === null) {
-            $position = Task::where('column_id', $column->id)->count();
-        }
-
-        // Update positions in old column
-        Task::where('column_id', $this->column_id)
-            ->where('position', '>', $this->position)
-            ->decrement('position');
-
-        // Update positions in new column
-        Task::where('column_id', $column->id)
-            ->where('position', '>=', $position)
-            ->increment('position');
-
-        // Update task
-        $this->update([
-            'column_id' => $column->id,
-            'position' => $position
-        ]);
-
-        // Log activity
-        $this->activities()->create([
-            'user_id' => $user ? $user->id : auth()->id(),
-            'action' => 'moved',
-            'description' => "Task moved from {$oldColumn->name} to {$column->name}",
-            'old_values' => ['column_id' => $oldColumn->id, 'position' => $oldPosition],
-            'new_values' => ['column_id' => $column->id, 'position' => $position]
-        ]);
-    }
-
-    public function duplicate(User $user = null): Task
-    {
-        $newTask = $this->replicate();
-        $newTask->title = $this->title . ' (Copy)';
-        $newTask->position = Task::where('column_id', $this->column_id)->count();
-        $newTask->created_by = $user ? $user->id : auth()->id();
-        $newTask->completed_at = null;
-        $newTask->save();
-
-        // Log activity for new task
-        $newTask->activities()->create([
-            'user_id' => $user ? $user->id : auth()->id(),
-            'action' => 'created',
-            'description' => "Task duplicated from #{$this->id}"
-        ]);
-
-        return $newTask;
-    }
-
-    public function addComment(string $content, User $user = null): TaskComment
-    {
-        $comment = $this->comments()->create([
-            'user_id' => $user ? $user->id : auth()->id(),
-            'content' => $content
-        ]);
-
-        // Log activity
-        $this->activities()->create([
-            'user_id' => $user ? $user->id : auth()->id(),
-            'action' => 'commented',
-            'description' => 'Added a comment to the task'
-        ]);
-
-        return $comment;
-    }
-
-    public function updatePriority(string $priority, User $user = null): void
-    {
-        $oldPriority = $this->priority;
-        
-        $this->update(['priority' => $priority]);
-
-        // Log activity
-        $this->activities()->create([
-            'user_id' => $user ? $user->id : auth()->id(),
-            'action' => 'priority_changed',
-            'description' => "Priority changed from {$oldPriority} to {$priority}",
-            'old_values' => ['priority' => $oldPriority],
-            'new_values' => ['priority' => $priority]
-        ]);
-    }
-
-    public function updateDueDate($dueDate, User $user = null): void
-    {
-        $oldDueDate = $this->due_date;
-        
-        $this->update(['due_date' => $dueDate]);
-
-        // Log activity
-        $this->activities()->create([
-            'user_id' => $user ? $user->id : auth()->id(),
-            'action' => 'due_date_changed',
-            'description' => $dueDate 
-                ? "Due date set to " . \Carbon\Carbon::parse($dueDate)->format('M j, Y')
-                : "Due date removed",
-            'old_values' => ['due_date' => $oldDueDate],
-            'new_values' => ['due_date' => $dueDate]
-        ]);
-    }
-
-    // Boot method for model events
+    /**
+     * Boot the model.
+     *
+     * @return void
+     */
     protected static function boot()
     {
         parent::boot();
 
-        // When creating a task, set position if not provided
+        // Set default position when creating a task
         static::creating(function ($task) {
-            if (!$task->position) {
+            if (!isset($task->position)) {
                 $task->position = Task::where('column_id', $task->column_id)->count();
+            }
+            
+            if (!isset($task->created_by) && Auth::check()) {
+                $task->created_by = Auth::id();
             }
         });
 
-        // When deleting a task, update positions of remaining tasks
+        // Update positions when deleting a task
         static::deleting(function ($task) {
             Task::where('column_id', $task->column_id)
                 ->where('position', '>', $task->position)
                 ->decrement('position');
+                
+            // Log deletion activity if not a soft delete
+            if (!$task->isForceDeleting()) {
+                $task->activities()->create([
+                    'user_id' => optional(Auth::user())->id,
+                    'action' => 'deleted',
+                    'description' => 'Task was deleted'
+                ]);
+            }
         });
     }
 }

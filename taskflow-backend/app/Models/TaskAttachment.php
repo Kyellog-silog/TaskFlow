@@ -6,6 +6,18 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property-read string $download_url
+ * @property-read string $file_size_human
+ * @property-read bool $is_document
+ * @property-read bool $is_image
+ * @property-read \App\Models\Task|null $task
+ * @property-read \App\Models\User|null $uploader
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TaskAttachment newModelQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TaskAttachment newQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TaskAttachment query()
+ * @mixin \Eloquent
+ */
 class TaskAttachment extends Model
 {
     use HasFactory;

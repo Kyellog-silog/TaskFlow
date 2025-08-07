@@ -6,66 +6,169 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Board extends Model
 {
-    use HasFactory;
-    protected $appends = ['created_by'];
-
+    use HasFactory, SoftDeletes;
+    
     protected $fillable = [
         'name',
         'description',
         'team_id',
         'created_by',
+        'archived_at',
+        'last_visited_at',
     ];
 
     protected $with = ['team', 'createdBy', 'columns'];
 
+    protected $casts = [
+        'archived_at' => 'datetime',
+        'last_visited_at' => 'datetime',
+        'deleted_at' => 'datetime',
+    ];
+
+    /**
+     * Get the team that owns the board, with safe null handling.
+     */
     public function team(): BelongsTo
     {
         return $this->belongsTo(Team::class)->withDefault();
     }
 
+    /**
+     * Get the user who created the board.
+     */
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /**
+     * Get the columns of the board, ordered by position.
+     */
     public function columns(): HasMany
     {
-        return $this->hasMany(BoardColumn::class);
+        return $this->hasMany(BoardColumn::class)->orderBy('position');
     }
 
+    /**
+     * Get all tasks of the board.
+     */
     public function tasks(): HasMany
     {
         return $this->hasMany(Task::class);
     }
 
+    /**
+     * Get only non-deleted tasks of the board.
+     */
+    public function activeTasks(): HasMany
+    {
+        return $this->hasMany(Task::class)->whereNull('deleted_at');
+    }
+
+    /**
+     * Scope to get boards accessible by a specific user.
+     * This includes:
+     * - Personal boards created by the user
+     * - Boards from teams where the user is a member
+     */
     public function scopeForUser($query, $userId)
     {
         return $query->where(function($q) use ($userId) {
-        $q->where('created_by', $userId)
-            ->whereNull('team_id')
-            ->orWhereHas('team', function ($q) use ($userId) {
-                $q->forUser($userId);
-            });
+            $q->where('created_by', $userId)
+              ->whereNull('team_id')
+              ->orWhereHas('team', function ($q) use ($userId) {
+                  $q->forUser($userId);
+              });
         });
     }
 
+    /**
+     * Scope to get only active (non-archived, non-deleted) boards
+     */
+    public function scopeActive($query)
+    {
+        return $query->whereNull('archived_at');
+    }
+
+    /**
+     * Scope to get only archived boards
+     */
+    public function scopeArchived($query)
+    {
+        return $query->whereNotNull('archived_at');
+    }
+
+    /**
+     * Scope to get recently visited boards
+     */
+    public function scopeRecentlyVisited($query, $limit = 5)
+    {
+        return $query->whereNotNull('last_visited_at')
+                    ->orderBy('last_visited_at', 'desc')
+                    ->limit($limit);
+    }
+
+    /**
+     * Check if board is archived
+     */
+    public function isArchived(): bool
+    {
+        return !is_null($this->archived_at);
+    }
+
+    /**
+     * Archive the board
+     */
+    public function archive(): bool
+    {
+        return $this->update(['archived_at' => now()]);
+    }
+
+    /**
+     * Unarchive the board
+     */
+    public function unarchive(): bool
+    {
+        return $this->update(['archived_at' => null]);
+    }
+
+    /**
+     * Update last visited timestamp
+     */
+    public function updateLastVisited(): bool
+    {
+        return $this->update(['last_visited_at' => now()]);
+    }
+
+    /**
+     * Check if a user can access this board.
+     */
     public function canUserAccess(User $user): bool
     {
-        if (!$this->team_id){
+        // Personal boards are only accessible by their creator
+        if (!$this->team_id) {
             return $this->created_by == $user->id;
         }
+        
+        // Team boards are accessible by all team members
         return $this->team->isMember($user);
     }
 
+    /**
+     * Check if a user can manage this board.
+     */
     public function canUserManage(User $user): bool
     {
-        if (!$this->team_id){
+        // Personal boards are only manageable by their creator
+        if (!$this->team_id) {
             return $this->created_by == $user->id;
         }
+        
+        // Team boards are manageable by team admins and the board creator
         return $this->team->isAdmin($user) || $this->createdBy?->id === $user->id;
     }
-
 }

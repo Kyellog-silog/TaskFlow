@@ -3,7 +3,6 @@
 import * as React from "react"
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import { authAPI } from "../services/api"
-import { tr } from "date-fns/locale"
 
 
 
@@ -63,6 +62,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const login = async (email: string, password: string) => {
+    await authAPI.getCsrfCookie();
     const response = await authAPI.login(email, password);
     if (response.success && response.data && response.data.user) {
       setUser(response.data.user);

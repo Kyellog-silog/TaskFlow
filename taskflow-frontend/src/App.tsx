@@ -19,6 +19,7 @@ import LoginPage from "./pages/LoginPage"
 import RegisterPage from "./pages/RegisterPage"
 import DashboardPage from "./pages/DashboardPage"
 import BoardPage from "./pages/BoardPage"
+import BoardsPage from "./pages/BoardsPage"
 import TeamsPage from "./pages/TeamsPage"
 import ProfilePage from "./pages/ProfilePage"
 import SettingsPage from "./pages/SettingsPage"
@@ -44,6 +45,15 @@ const queryClient = new QueryClient({
 
 function App() {
   const toastHandler = useToast()
+  const toastSetRef = React.useRef(false)
+  
+  // Set global toast immediately and only once
+  if (!toastSetRef.current) {
+    setGlobalToast(toastHandler)
+    toastSetRef.current = true
+  }
+  
+  // Also set it in useEffect as backup
   React.useEffect(() => {
     setGlobalToast(toastHandler)
   }, [toastHandler])
@@ -87,6 +97,14 @@ function App() {
                     element={
                       <ProtectedRoute>
                         <DashboardPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/boards"
+                    element={
+                      <ProtectedRoute>
+                        <BoardsPage />
                       </ProtectedRoute>
                     }
                   />
@@ -167,8 +185,5 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 
   return <>{children}</>
 }
-
-// Import useAuth hook
-
 
 export default App

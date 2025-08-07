@@ -28,10 +28,7 @@ Route::prefix('auth')->group(function () {
     Route::post('/reset-password', [NewPasswordController::class, 'store']);
 });
 
-// CSRF cookie route for Sanctum
-Route::get('/sanctum/csrf-cookie', function () {
-    return response()->json(['message' => 'CSRF cookie set']);
-})->middleware('web');
+
 
 // Protected routes
 Route::middleware('auth:sanctum')->group(function () {
@@ -50,6 +47,7 @@ Route::middleware('auth:sanctum')->group(function () {
             ]
         ]);
     });
+    
 
     // Team routes
     Route::apiResource('teams', TeamController::class);
@@ -107,4 +105,21 @@ Route::get('/health', function () {
 // CSRF token for SPA (not needed with Sanctum cookie-based auth, but kept for compatibility)
 Route::get('/csrf-token', function () {
     return response()->json(['csrf_token' => csrf_token()]);
+});
+
+Route::get('/sanctum/csrf-cookie', function () {
+    return response()->json([
+        'message' => 'CSRF cookie set'
+    ])->cookie('XSRF-TOKEN', csrf_token(), 60, '/', config('session.domain'), false, false);
+});
+
+// Board management routes
+Route::middleware('auth:sanctum')->group(function () {
+    // Existing board routes...
+    Route::apiResource('boards', BoardController::class);
+    
+    // New board status routes
+    Route::post('boards/{board}/archive', [BoardController::class, 'archive']);
+    Route::post('boards/{board}/unarchive', [BoardController::class, 'unarchive']);
+    Route::post('boards/{id}/restore', [BoardController::class, 'restore']);
 });
