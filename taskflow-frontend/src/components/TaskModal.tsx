@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { MessageSquare, User, Clock, Tag, Calendar, Flag, Sparkles, Send, X, Save } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Button } from "./ui/button"
@@ -17,6 +17,7 @@ interface Task {
   title: string
   description: string
   status: string
+  columnId: string // Add this line
   priority: "low" | "medium" | "high"
   assignee?: {
     id: string
@@ -43,35 +44,43 @@ interface TaskModalProps {
   isOpen: boolean
   onClose: () => void
   onUpdate: (task: Task) => void
+  onMove?: (taskId: string, newColumnId: string) => void // Add move callback
 }
 
-export function TaskModal({ task, isOpen, onClose, onUpdate }: TaskModalProps) {
+export function TaskModal({ task, isOpen, onClose, onUpdate, onMove }: TaskModalProps) {
   const [editedTask, setEditedTask] = useState<Task>(task)
   const [newComment, setNewComment] = useState("")
+  const [originalStatus, setOriginalStatus] = useState(task.status)
+
+  // Update editedTask when task prop changes
+  useEffect(() => {
+    console.log("TaskModal received task:", task)
+    console.log("Task status:", task.status)
+    setEditedTask(task)
+    setOriginalStatus(task.status)
+  }, [task])
 
   const handleSave = () => {
+    console.log(`Saving task. Original status: ${originalStatus}, New status: ${editedTask.status}`)
+    
+    // Always update the task first
     onUpdate(editedTask)
+    
+    // Check if status changed and trigger move if needed
+    if (editedTask.status !== originalStatus && onMove) {
+      console.log(`Status changed from ${originalStatus} to ${editedTask.status}, triggering move`)
+      // Small delay to ensure the update completes first
+      setTimeout(() => {
+        onMove(editedTask.id, editedTask.status)
+      }, 100)
+    }
+    
     onClose()
   }
 
-  const handleAddComment = () => {
-    if (newComment.trim()) {
-      const comment: Comment = {
-        id: `comment-${Date.now()}`,
-        content: newComment,
-        author: {
-          name: "Current User",
-          avatar: "/placeholder.svg?height=24&width=24",
-        },
-        createdAt: new Date().toISOString(),
-      }
-
-      setEditedTask({
-        ...editedTask,
-        comments: [...editedTask.comments, comment],
-      })
-      setNewComment("")
-    }
+  const handleStatusChange = (newStatus: string) => {
+    console.log(`Changing task status from ${editedTask.status} to ${newStatus}`)
+    setEditedTask({ ...editedTask, status: newStatus })
   }
 
   const getPriorityConfig = (priority: string) => {
@@ -111,10 +120,10 @@ export function TaskModal({ task, isOpen, onClose, onUpdate }: TaskModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[95vh] overflow-hidden bg-gradient-to-br from-white via-blue-50 to-purple-50 border-2 border-blue-200 shadow-2xl">
+      <DialogContent className="max-w-4xl h-[90vh] flex flex-col bg-gradient-to-br from-white via-blue-50 to-purple-50 border-2 border-blue-200 shadow-2xl">
         {/* Header */}
         <DialogHeader className="pb-0">
-          <div className={`p-6 -m-6 mb-6 bg-gradient-to-r ${priorityConfig.bgColor} border-b-2 ${priorityConfig.borderColor} relative overflow-hidden`}>
+          <div className={`p-4 -m-6 mb-4 bg-gradient-to-r ${priorityConfig.bgColor} border-b-2 ${priorityConfig.borderColor} relative overflow-hidden`}>
             {/* Background decoration */}
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-16 translate-x-16"></div>
             <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full translate-y-12 -translate-x-12"></div>
@@ -132,29 +141,29 @@ export function TaskModal({ task, isOpen, onClose, onUpdate }: TaskModalProps) {
           </div>
         </DialogHeader>
 
-        <div className="overflow-y-auto max-h-[calc(95vh-200px)] px-6 pb-6 space-y-8">
+        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
           {/* Task Title */}
           <div className="space-y-3">
-            <label className="text-sm font-bold text-gray-700 flex items-center space-x-2">
+            <label className="text-sm font-bold text-gray-800 flex items-center space-x-2">
               <Sparkles className="h-4 w-4 text-blue-500" />
               <span>Task Title</span>
             </label>
             <Input
               value={editedTask.title}
               onChange={(e) => setEditedTask({ ...editedTask, title: e.target.value })}
-              className="text-lg font-semibold bg-white border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200"
+              className="text-lg font-semibold bg-white border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 text-gray-900 placeholder:text-gray-500"
               placeholder="Enter task title..."
             />
           </div>
 
           {/* Task Description */}
           <div className="space-y-3">
-            <label className="text-sm font-bold text-gray-700">Description</label>
+            <label className="text-sm font-bold text-gray-800">Description</label>
             <Textarea
               value={editedTask.description}
               onChange={(e) => setEditedTask({ ...editedTask, description: e.target.value })}
               rows={4}
-              className="bg-white border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200"
+              className="bg-white border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 text-gray-900 placeholder:text-gray-500"
               placeholder="Describe what needs to be done..."
             />
           </div>
@@ -162,34 +171,34 @@ export function TaskModal({ task, isOpen, onClose, onUpdate }: TaskModalProps) {
           {/* Task Properties Grid */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="space-y-3">
-              <label className="text-sm font-bold text-gray-700">Status</label>
+              <label className="text-sm font-bold text-gray-800">Status</label>
               <Select
                 value={editedTask.status}
-                onValueChange={(value) => setEditedTask({ ...editedTask, status: value })}
+                onValueChange={handleStatusChange}
               >
-                <SelectTrigger className="bg-white border-2 border-gray-200 focus:border-blue-500">
-                  <SelectValue />
+                <SelectTrigger className="bg-white border-2 border-gray-200 focus:border-blue-500 text-gray-900">
+                  <SelectValue placeholder="Select status" />
                 </SelectTrigger>
                 <SelectContent className="bg-white border-2 border-gray-200">
-                  <SelectItem value="todo" className="hover:bg-blue-50">
+                  <SelectItem value="todo" className="hover:bg-blue-50 text-gray-900">
                     <div className="flex items-center space-x-2">
                       <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
                       <span>To Do</span>
                     </div>
                   </SelectItem>
-                  <SelectItem value="in-progress" className="hover:bg-yellow-50">
+                  <SelectItem value="in-progress" className="hover:bg-yellow-50 text-gray-900">
                     <div className="flex items-center space-x-2">
                       <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
                       <span>In Progress</span>
                     </div>
                   </SelectItem>
-                  <SelectItem value="review" className="hover:bg-purple-50">
+                  <SelectItem value="review" className="hover:bg-purple-50 text-gray-900">
                     <div className="flex items-center space-x-2">
                       <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
                       <span>Review</span>
                     </div>
                   </SelectItem>
-                  <SelectItem value="done" className="hover:bg-green-50">
+                  <SelectItem value="done" className="hover:bg-green-50 text-gray-900">
                     <div className="flex items-center space-x-2">
                       <div className="w-3 h-3 bg-green-500 rounded-full"></div>
                       <span>Done</span>
@@ -200,7 +209,7 @@ export function TaskModal({ task, isOpen, onClose, onUpdate }: TaskModalProps) {
             </div>
 
             <div className="space-y-3">
-              <label className="text-sm font-bold text-gray-700 flex items-center space-x-2">
+              <label className="text-sm font-bold text-gray-800 flex items-center space-x-2">
                 <Flag className="h-4 w-4 text-purple-500" />
                 <span>Priority</span>
               </label>
@@ -208,23 +217,23 @@ export function TaskModal({ task, isOpen, onClose, onUpdate }: TaskModalProps) {
                 value={editedTask.priority}
                 onValueChange={(value: "low" | "medium" | "high") => setEditedTask({ ...editedTask, priority: value })}
               >
-                <SelectTrigger className="bg-white border-2 border-gray-200 focus:border-blue-500">
+                <SelectTrigger className="bg-white border-2 border-gray-200 focus:border-blue-500 text-gray-900">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-white border-2 border-gray-200">
-                  <SelectItem value="low" className="hover:bg-green-50">
+                  <SelectItem value="low" className="hover:bg-green-50 text-gray-900">
                     <div className="flex items-center space-x-2">
                       <span>🌱</span>
                       <span>Low Priority</span>
                     </div>
                   </SelectItem>
-                  <SelectItem value="medium" className="hover:bg-yellow-50">
+                  <SelectItem value="medium" className="hover:bg-yellow-50 text-gray-900">
                     <div className="flex items-center space-x-2">
                       <span>⚡</span>
                       <span>Medium Priority</span>
                     </div>
                   </SelectItem>
-                  <SelectItem value="high" className="hover:bg-red-50">
+                  <SelectItem value="high" className="hover:bg-red-50 text-gray-900">
                     <div className="flex items-center space-x-2">
                       <span>🔥</span>
                       <span>High Priority</span>
@@ -235,7 +244,7 @@ export function TaskModal({ task, isOpen, onClose, onUpdate }: TaskModalProps) {
             </div>
 
             <div className="space-y-3">
-              <label className="text-sm font-bold text-gray-700 flex items-center space-x-2">
+              <label className="text-sm font-bold text-gray-800 flex items-center space-x-2">
                 <Calendar className="h-4 w-4 text-green-500" />
                 <span>Due Date</span>
               </label>
@@ -243,14 +252,14 @@ export function TaskModal({ task, isOpen, onClose, onUpdate }: TaskModalProps) {
                 type="date"
                 value={editedTask.dueDate || ""}
                 onChange={(e) => setEditedTask({ ...editedTask, dueDate: e.target.value })}
-                className="bg-white border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200"
+                className="bg-white border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 text-gray-900"
               />
             </div>
           </div>
 
           {/* Assignee Section */}
           <div className="space-y-3">
-            <label className="text-sm font-bold text-gray-700 flex items-center space-x-2">
+            <label className="text-sm font-bold text-gray-800 flex items-center space-x-2">
               <User className="h-4 w-4 text-indigo-500" />
               <span>Assignee</span>
             </label>
@@ -281,7 +290,7 @@ export function TaskModal({ task, isOpen, onClose, onUpdate }: TaskModalProps) {
           <Separator className="bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
 
           {/* Comments Section */}
-          <div className="space-y-6">
+          <div className="space-y-4">
             <div className="flex items-center space-x-3">
               <div className="p-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl">
                 <MessageSquare className="h-5 w-5 text-white" />
@@ -292,7 +301,7 @@ export function TaskModal({ task, isOpen, onClose, onUpdate }: TaskModalProps) {
             </div>
 
             {/* Existing Comments */}
-            <div className="space-y-4 max-h-60 overflow-y-auto">
+            <div className="space-y-4 max-h-40 overflow-y-auto">
               {editedTask.comments.map((comment) => (
                 <div key={comment.id} className="flex space-x-3 p-4 bg-white rounded-xl border border-gray-200 shadow-sm">
                   <Avatar className="h-10 w-10 ring-2 ring-gray-200">
@@ -332,10 +341,10 @@ export function TaskModal({ task, isOpen, onClose, onUpdate }: TaskModalProps) {
                     value={newComment}
                     onChange={(e) => setNewComment(e.target.value)}
                     rows={3}
-                    className="bg-white border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200"
+                    className="bg-white border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 text-gray-900 placeholder:text-gray-500"
                   />
                   <Button 
-                    onClick={handleAddComment} 
+                    onClick={() => {}}
                     className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
                     disabled={!newComment.trim()}
                   >
@@ -355,7 +364,7 @@ export function TaskModal({ task, isOpen, onClose, onUpdate }: TaskModalProps) {
                   <Clock className="h-4 w-4 text-blue-500" />
                 </div>
                 <div>
-                  <p className="font-semibold text-gray-700">Created</p>
+                  <p className="font-semibold text-gray-800">Created</p>
                   <p className="text-gray-600">{new Date(editedTask.createdAt).toLocaleDateString()}</p>
                 </div>
               </div>
@@ -364,7 +373,7 @@ export function TaskModal({ task, isOpen, onClose, onUpdate }: TaskModalProps) {
                   <Tag className="h-4 w-4 text-purple-500" />
                 </div>
                 <div>
-                  <p className="font-semibold text-gray-700">Task ID</p>
+                  <p className="font-semibold text-gray-800">Task ID</p>
                   <p className="text-gray-600 font-mono">#{editedTask.id}</p>
                 </div>
               </div>
@@ -373,7 +382,7 @@ export function TaskModal({ task, isOpen, onClose, onUpdate }: TaskModalProps) {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex justify-end space-x-3 p-6 pt-0">
+        <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 bg-white/80 backdrop-blur-sm">
           <Button 
             variant="outline" 
             onClick={onClose}

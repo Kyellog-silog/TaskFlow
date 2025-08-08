@@ -1,27 +1,47 @@
 "use client"
 
-import type React from "react"
-
-import { useState } from "react"
+import React, { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "react-query"
 import { Header } from "../components/Header"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
+import { Card, CardContent } from "../components/ui/card"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Badge } from "../components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog"
 import { Textarea } from "../components/ui/textarea"
+import { TeamModal } from "../components/TeamModal"
 import { teamsAPI } from "../services/api"
 import { useToast } from "../hooks/use-toast"
 import { useAuth } from "../contexts/AuthContext"
-import { Plus, Users, Settings, Crown, Mail } from "lucide-react"
+import { Plus, Users, Settings, Crown, Mail, Sparkles, Target, Clock, TrendingUp, Eye, Edit, UserPlus } from 'lucide-react'
+
+interface Team {
+  id: string
+  name: string
+  description: string
+  members: Array<{
+    id: string
+    name: string
+    role: "admin" | "member"
+    avatar: string
+  }>
+  boards: number
+  tasks: number
+  owner: {
+    id: string
+    name: string
+  }
+  createdAt: string
+  color?: string
+}
 
 const TeamsPage = () => {
   const { user } = useAuth()
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [selectedTeam, setSelectedTeam] = useState<Team | null>(null)
   const [newTeam, setNewTeam] = useState({ name: "", description: "" })
 
   // Fetch teams
@@ -35,7 +55,7 @@ const TeamsPage = () => {
       setNewTeam({ name: "", description: "" })
       toast({
         title: "Success",
-        description: "Team created successfully",
+        description: "Team created successfully! 🎉",
       })
     },
     onError: () => {
@@ -54,7 +74,7 @@ const TeamsPage = () => {
     createTeamMutation.mutate(newTeam)
   }
 
-  const mockTeams = [
+  const mockTeams: Team[] = [
     {
       id: "1",
       name: "Development Team",
@@ -67,6 +87,8 @@ const TeamsPage = () => {
       boards: 3,
       tasks: 24,
       owner: { id: "1", name: "Alice Johnson" },
+      createdAt: "2024-01-15",
+      color: "blue"
     },
     {
       id: "2",
@@ -79,73 +101,206 @@ const TeamsPage = () => {
       boards: 2,
       tasks: 12,
       owner: { id: "4", name: "David Wilson" },
+      createdAt: "2024-01-20",
+      color: "purple"
+    },
+    {
+      id: "3",
+      name: "Marketing Team",
+      description: "Brand strategy and marketing campaigns",
+      members: [
+        { id: "6", name: "Frank Miller", role: "admin", avatar: "/placeholder.svg?height=32&width=32" },
+        { id: "7", name: "Grace Lee", role: "member", avatar: "/placeholder.svg?height=32&width=32" },
+        { id: "8", name: "Henry Chen", role: "member", avatar: "/placeholder.svg?height=32&width=32" },
+        { id: "9", name: "Ivy Rodriguez", role: "member", avatar: "/placeholder.svg?height=32&width=32" },
+      ],
+      boards: 4,
+      tasks: 18,
+      owner: { id: "6", name: "Frank Miller" },
+      createdAt: "2024-02-01",
+      color: "green"
     },
   ]
 
+  const totalTeams = mockTeams.length
+  const totalMembers = mockTeams.reduce((acc, team) => acc + team.members.length, 0)
+  const totalBoards = mockTeams.reduce((acc, team) => acc + team.boards, 0)
+  const totalTasks = mockTeams.reduce((acc, team) => acc + team.tasks, 0)
+
+  const getTeamColorConfig = (color?: string) => {
+    switch (color) {
+      case "blue":
+        return {
+          gradient: "from-blue-500 to-cyan-500",
+          bg: "from-blue-50 to-cyan-50",
+          border: "border-blue-200",
+          text: "text-blue-600"
+        }
+      case "purple":
+        return {
+          gradient: "from-purple-500 to-pink-500",
+          bg: "from-purple-50 to-pink-50",
+          border: "border-purple-200",
+          text: "text-purple-600"
+        }
+      case "green":
+        return {
+          gradient: "from-green-500 to-emerald-500",
+          bg: "from-green-50 to-emerald-50",
+          border: "border-green-200",
+          text: "text-green-600"
+        }
+      default:
+        return {
+          gradient: "from-gray-500 to-slate-500",
+          bg: "from-gray-50 to-slate-50",
+          border: "border-gray-200",
+          text: "text-gray-600"
+        }
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       <Header />
 
       <main className="container mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Teams</h1>
-            <p className="text-gray-600">Manage your teams and collaborate with members</p>
+        {/* Enhanced Header Section */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+                Teams
+              </h1>
+              <p className="text-gray-600 text-lg">
+                Manage your teams and collaborate with members across projects
+              </p>
+            </div>
+            <div className="flex items-center space-x-4">
+              <div className="text-right">
+                <div className="text-sm text-gray-500">Active Teams</div>
+                <div className="text-2xl font-bold text-blue-600">{totalTeams}</div>
+              </div>
+              <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+                <DialogTrigger asChild>
+                  <Button 
+                    className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+                    data-create-team-button
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Team
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-gradient-to-br from-white via-blue-50 to-purple-50 border-2 border-blue-200">
+                  <DialogHeader>
+                    <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                      Create New Team
+                    </DialogTitle>
+                  </DialogHeader>
+                  <form onSubmit={handleCreateTeam} className="space-y-6">
+                    <div>
+                      <label className="text-sm font-bold text-gray-800 mb-2 block">Team Name</label>
+                      <Input
+                        value={newTeam.name}
+                        onChange={(e) => setNewTeam({ ...newTeam, name: e.target.value })}
+                        placeholder="Enter team name"
+                        className="bg-white border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-black"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-bold text-gray-800 mb-2 block">Description</label>
+                      <Textarea
+                        value={newTeam.description}
+                        onChange={(e) => setNewTeam({ ...newTeam, description: e.target.value })}
+                        placeholder="Enter team description"
+                        rows={3}
+                        className="bg-white border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-black"
+                      />
+                    </div>
+                    <div className="flex justify-end space-x-3">
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        onClick={() => setIsCreateModalOpen(false)}
+                        className="border-2 border-gray-300"
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        type="submit" 
+                        disabled={createTeamMutation.isLoading}
+                        className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+                      >
+                        {createTeamMutation.isLoading ? "Creating..." : "Create Team"}
+                      </Button>
+                    </div>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </div>
+          
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl p-4 text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-blue-100 text-sm">Total Teams</p>
+                  <p className="text-2xl font-bold">{totalTeams}</p>
+                </div>
+                <Users className="h-8 w-8 text-blue-200" />
+              </div>
+            </div>
+            <div className="bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl p-4 text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-purple-100 text-sm">Team Members</p>
+                  <p className="text-2xl font-bold">{totalMembers}</p>
+                </div>
+                <Target className="h-8 w-8 text-purple-200" />
+              </div>
+            </div>
+            <div className="bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl p-4 text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-green-100 text-sm">Active Boards</p>
+                  <p className="text-2xl font-bold">{totalBoards}</p>
+                </div>
+                <TrendingUp className="h-8 w-8 text-green-200" />
+              </div>
+            </div>
+            <div className="bg-gradient-to-r from-yellow-500 to-orange-500 rounded-xl p-4 text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-yellow-100 text-sm">Total Tasks</p>
+                  <p className="text-2xl font-bold">{totalTasks}</p>
+                </div>
+                <Sparkles className="h-8 w-8 text-yellow-200" />
+              </div>
+            </div>
           </div>
 
-          <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
-            <DialogTrigger asChild>
-              <Button data-create-team-button>
-                <Plus className="h-4 w-4 mr-2" />
-                Create Team
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create New Team</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleCreateTeam} className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">Team Name</label>
-                  <Input
-                    value={newTeam.name}
-                    onChange={(e) => setNewTeam({ ...newTeam, name: e.target.value })}
-                    placeholder="Enter team name"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">Description</label>
-                  <Textarea
-                    value={newTeam.description}
-                    onChange={(e) => setNewTeam({ ...newTeam, description: e.target.value })}
-                    placeholder="Enter team description"
-                    rows={3}
-                  />
-                </div>
-                <div className="flex justify-end space-x-2">
-                  <Button type="button" variant="outline" onClick={() => setIsCreateModalOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={createTeamMutation.isLoading}>
-                    {createTeamMutation.isLoading ? "Creating..." : "Create Team"}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <div className="flex items-center justify-between text-sm text-gray-600 bg-white/50 backdrop-blur-sm rounded-lg p-4">
+            <div className="flex items-center space-x-4">
+              <span>Role: <span className="font-semibold capitalize text-blue-600">{user?.role}</span></span>
+              <span>•</span>
+              <span>Teams you own: <span className="font-medium text-purple-600">2</span></span>
+            </div>
+            <div className="text-right">
+              <span>Last updated: <span className="font-medium">Just now</span></span>
+            </div>
+          </div>
         </div>
 
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[1, 2, 3].map((i) => (
-              <Card key={i} className="animate-pulse">
-                <CardHeader>
-                  <div className="h-6 bg-gray-200 rounded w-3/4"></div>
-                  <div className="h-4 bg-gray-200 rounded w-full"></div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
+              <Card key={i} className="animate-pulse bg-white/50 backdrop-blur-sm border-2 border-gray-200">
+                <CardContent className="p-6">
+                  <div className="space-y-4">
+                    <div className="h-6 bg-gray-200 rounded w-3/4"></div>
+                    <div className="h-4 bg-gray-200 rounded w-full"></div>
                     <div className="h-4 bg-gray-200 rounded w-1/2"></div>
                     <div className="flex space-x-2">
                       {[1, 2, 3].map((j) => (
@@ -159,112 +314,189 @@ const TeamsPage = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {mockTeams.map((team) => (
-              <Card key={team.id} className="hover:shadow-md transition-shadow">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <CardTitle className="flex items-center space-x-2">
-                        <span>{team.name}</span>
-                        {team.owner.id === user?.id && (
-                          <span title="You own this team">
-                            <Crown className="h-4 w-4 text-yellow-500" />
-                          </span>
-                        )}
-                      </CardTitle>
-                      <CardDescription className="mt-1">{team.description}</CardDescription>
-                    </div>
-                    <Button variant="ghost" size="sm">
-                      <Settings className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {/* Team Stats */}
-                    <div className="flex justify-between text-sm">
-                      <div className="flex items-center space-x-1">
-                        <Users className="h-4 w-4 text-gray-500" />
-                        <span>{team.members.length} members</span>
-                      </div>
-                      <div className="flex space-x-4">
-                        <span>{team.boards} boards</span>
-                        <span>{team.tasks} tasks</span>
-                      </div>
-                    </div>
-
-                    {/* Team Members */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-gray-700">Members</span>
-                        <Button variant="ghost" size="sm">
-                          <Mail className="h-3 w-3 mr-1" />
-                          Invite
-                        </Button>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        {team.members.slice(0, 4).map((member) => (
-                          <div key={member.id} className="relative">
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage src={member.avatar || "/placeholder.svg"} />
-                              <AvatarFallback className="text-xs">
-                                {member.name
-                                  .split(" ")
-                                  .map((n) => n[0])
-                                  .join("")}
-                              </AvatarFallback>
-                            </Avatar>
-                            {member.role === "admin" && (
-                              <div className="absolute -top-1 -right-1 h-3 w-3 bg-yellow-500 rounded-full border border-white"></div>
+            {mockTeams.map((team) => {
+              const colorConfig = getTeamColorConfig(team.color)
+              return (
+                <Card 
+                  key={team.id} 
+                  className="group hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 bg-white/80 backdrop-blur-sm border-2 border-gray-200 hover:border-blue-300 relative overflow-hidden cursor-pointer"
+                  onClick={() => setSelectedTeam(team)}
+                >
+                  {/* Background decoration */}
+                  <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${colorConfig.bg} rounded-full -translate-y-16 translate-x-16 opacity-50`}></div>
+                  <div className={`absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr ${colorConfig.bg} rounded-full translate-y-12 -translate-x-12 opacity-30`}></div>
+                  
+                  <CardContent className="p-6 relative z-10">
+                    <div className="space-y-4">
+                      {/* Header */}
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-2 mb-2">
+                            <h3 className="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
+                              {team.name}
+                            </h3>
+                            {team.owner.id === user?.id && (
+                              <span title="You own this team">
+                                <Crown className="h-5 w-5 text-yellow-500" />
+                              </span>
                             )}
                           </div>
-                        ))}
-                        {team.members.length > 4 && (
-                          <div className="h-8 w-8 bg-gray-200 rounded-full flex items-center justify-center">
-                            <span className="text-xs text-gray-600">+{team.members.length - 4}</span>
-                          </div>
-                        )}
+                          <p className="text-gray-600 text-sm leading-relaxed">{team.description}</p>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-50"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedTeam(team)
+                          }}
+                        >
+                          <Settings className="h-4 w-4" />
+                        </Button>
+                      </div>
+
+                      {/* Team Stats */}
+                      <div className="grid grid-cols-3 gap-4 p-3 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg border border-gray-200">
+                        <div className="text-center">
+                          <div className="text-lg font-bold text-blue-600">{team.members.length}</div>
+                          <div className="text-xs text-gray-600">Members</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-lg font-bold text-purple-600">{team.boards}</div>
+                          <div className="text-xs text-gray-600">Boards</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-lg font-bold text-green-600">{team.tasks}</div>
+                          <div className="text-xs text-gray-600">Tasks</div>
+                        </div>
+                      </div>
+
+                      {/* Team Members */}
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-sm font-bold text-gray-800">Members</span>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="text-blue-600 hover:bg-blue-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              // Handle invite
+                            }}
+                          >
+                            <UserPlus className="h-3 w-3 mr-1" />
+                            Invite
+                          </Button>
+                        </div>
+                        <div className="flex items-center space-x-2 mb-3">
+                          {team.members.slice(0, 4).map((member) => (
+                            <div key={member.id} className="relative">
+                              <Avatar className="h-10 w-10 ring-2 ring-white shadow-sm">
+                                <AvatarImage src={member.avatar || "/placeholder.svg"} />
+                                <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-500 text-white text-xs font-bold">
+                                  {member.name
+                                    .split(" ")
+                                    .map((n) => n[0])
+                                    .join("")}
+                                </AvatarFallback>
+                              </Avatar>
+                              {member.role === "admin" && (
+                                <div className="absolute -top-1 -right-1 h-4 w-4 bg-gradient-to-r from-yellow-400 to-orange-400 rounded-full border-2 border-white flex items-center justify-center">
+                                  <Crown className="h-2 w-2 text-white" />
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                          {team.members.length > 4 && (
+                            <div className="h-10 w-10 bg-gradient-to-br from-gray-200 to-gray-300 rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                              <span className="text-xs font-bold text-gray-600">+{team.members.length - 4}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Member Roles */}
+                        <div className="flex flex-wrap gap-1 mb-4">
+                          {team.members.slice(0, 3).map((member) => (
+                            <Badge 
+                              key={member.id} 
+                              variant="secondary" 
+                              className={`text-xs ${member.role === 'admin' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800'}`}
+                            >
+                              {member.name.split(" ")[0]} 
+                              {member.role === 'admin' && ' 👑'}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex space-x-2 pt-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="flex-1 bg-white/50 border-2 border-blue-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300 transition-all duration-200"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            // Handle view boards
+                          }}
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          View Boards
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="flex-1 bg-white/50 border-2 border-purple-200 text-purple-600 hover:bg-purple-50 hover:border-purple-300 transition-all duration-200"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedTeam(team)
+                          }}
+                        >
+                          <Edit className="h-4 w-4 mr-1" />
+                          Manage
+                        </Button>
                       </div>
                     </div>
-
-                    {/* Member Roles */}
-                    <div className="flex flex-wrap gap-1">
-                      {team.members.slice(0, 3).map((member) => (
-                        <Badge key={member.id} variant="secondary" className="text-xs">
-                          {member.name.split(" ")[0]} ({member.role})
-                        </Badge>
-                      ))}
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex space-x-2 pt-2">
-                      <Button variant="outline" size="sm" className="flex-1 bg-transparent">
-                        View Boards
-                      </Button>
-                      <Button variant="outline" size="sm" className="flex-1 bg-transparent">
-                        Manage
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              )
+            })}
           </div>
         )}
 
         {/* Empty State */}
         {!isLoading && (!teams?.data || teams.data.length === 0) && (
-          <div className="text-center py-12">
-            <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No teams yet</h3>
-            <p className="text-gray-600 mb-4">Create your first team to start collaborating with others.</p>
-            <Button onClick={() => setIsCreateModalOpen(true)} data-create-team-button>
-              <Plus className="h-4 w-4 mr-2" />
-              Create Your First Team
-            </Button>
+          <div className="text-center py-16">
+            <div className="max-w-md mx-auto bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-8 border-2 border-gray-200">
+              <div className="text-6xl mb-4">👥</div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-3">No teams yet</h3>
+              <p className="text-gray-600 mb-6">Create your first team to start collaborating with others and managing projects together!</p>
+              <Button 
+                onClick={() => setIsCreateModalOpen(true)} 
+                data-create-team-button
+                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              >
+                <Sparkles className="h-4 w-4 mr-2" />
+                Create Your First Team
+              </Button>
+            </div>
           </div>
         )}
       </main>
+
+      {/* Team Detail Modal */}
+      {selectedTeam && (
+        <TeamModal
+          team={selectedTeam}
+          isOpen={!!selectedTeam}
+          onClose={() => setSelectedTeam(null)}
+          onUpdate={(updatedTeam) => {
+            // Handle team update
+            setSelectedTeam(null)
+          }}
+        />
+      )}
     </div>
   )
 }

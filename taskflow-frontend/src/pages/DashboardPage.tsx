@@ -16,6 +16,7 @@ import { useToast } from "../hooks/use-toast"
 import { useAuth } from "../contexts/AuthContext"
 import { Calendar, Users, CheckSquare, Clock, MoreVertical, Folder, RefreshCw, Sparkles, Target, Edit, Trash2, Copy, ExternalLink, TrendingUp, Activity, Eye, Archive } from 'lucide-react'
 
+
 const DashboardPage = () => {
   const { user } = useAuth()
   const { toast } = useToast()
@@ -52,6 +53,24 @@ const DashboardPage = () => {
       },
     },
   )
+
+  const estimateCompletionPercentage = (board: any) => {
+    const totalTasks = board.tasks_count || 0;
+    if (totalTasks === 0) return 0;
+    
+    if (board.columns && board.columns.length > 0) {
+      const doneColumn = board.columns.find((col: any) => 
+        col.name.toLowerCase() === 'done' || 
+        col.name.toLowerCase().includes('complete')
+      );
+      
+      if (doneColumn && doneColumn.tasks) {
+        const completedTasks = doneColumn.tasks.length;
+        return Math.round((completedTasks / totalTasks) * 100);
+      }
+    }
+    return Math.min(100, Math.round(totalTasks > 0 ? 25 : 0));
+  }
 
   // Fetch all active boards for stats
   const {
@@ -165,6 +184,7 @@ const DashboardPage = () => {
     e.stopPropagation()
     archiveBoardMutation.mutate(board.id)
   }
+  
 
   const handleDuplicateBoard = (board: any, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -463,11 +483,11 @@ const DashboardPage = () => {
                           <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
                             <div 
                               className="h-full bg-gradient-to-r from-green-500 to-emerald-500 transition-all duration-300"
-                              style={{ width: `${Math.min(100, (board.tasks_count || 0) * 10)}%` }}
+                              style={{ width: `${estimateCompletionPercentage(board)}%` }}
                             ></div>
                           </div>
                           <span className="text-xs text-gray-500 font-medium">
-                            {Math.min(100, (board.tasks_count || 0) * 10)}%
+                            {estimateCompletionPercentage(board)}%
                           </span>
                         </div>
                       </div>

@@ -111,7 +111,7 @@ export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
                   className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-100 rounded-full" 
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <MoreHorizontal className="h-4 w-4" />
+                  <MoreHorizontal className="h-4 w-4 text-gray-700" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48 bg-white border-2 border-gray-200 shadow-xl rounded-xl">

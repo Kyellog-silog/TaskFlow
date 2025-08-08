@@ -5,6 +5,7 @@ import { useDroppable } from "@dnd-kit/core"
 import { Plus, AlertTriangle, Users, Sparkles, Target } from 'lucide-react'
 import { Button } from "./ui/button"
 import { Badge } from "./ui/badge"
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card"
 
 interface Column {
   id: string
@@ -18,22 +19,22 @@ interface Column {
 interface DroppableColumnProps {
   column: Column
   children: React.ReactNode
-  dragConstraints: {
+  dragConstraints?: {
     allowedColumns: string[]
     blockedColumns: string[]
     reason?: string
   }
-  userRole: "admin" | "member"
+  userRole?: "admin" | "member"
   onCreateTask: () => void
 }
 
-export const DroppableColumn: React.FC<DroppableColumnProps> = ({
+export function DroppableColumn({
   column,
   children,
-  dragConstraints,
-  userRole,
+  dragConstraints = { allowedColumns: [], blockedColumns: [] },
+  userRole = "member",
   onCreateTask,
-}) => {
+}: DroppableColumnProps) {
   const { isOver, setNodeRef, active } = useDroppable({
     id: column.id,
     data: {
@@ -78,6 +79,39 @@ export const DroppableColumn: React.FC<DroppableColumnProps> = ({
         accentColor: 'text-green-600'
       }
     }
+    
+    // If column has custom color, use that instead
+    if (column.color) {
+      const colorMap: { [key: string]: any } = {
+        'blue-500': {
+          gradient: 'from-blue-500 to-blue-600',
+          bgGradient: 'from-blue-50 to-blue-100',
+          borderColor: 'border-blue-200',
+          accentColor: 'text-blue-600'
+        },
+        'yellow-500': {
+          gradient: 'from-yellow-500 to-orange-500',
+          bgGradient: 'from-yellow-50 to-orange-50',
+          borderColor: 'border-yellow-200',
+          accentColor: 'text-yellow-600'
+        },
+        'purple-500': {
+          gradient: 'from-purple-500 to-pink-500',
+          bgGradient: 'from-purple-50 to-pink-50',
+          borderColor: 'border-purple-200',
+          accentColor: 'text-purple-600'
+        },
+        'green-500': {
+          gradient: 'from-green-500 to-emerald-500',
+          bgGradient: 'from-green-50 to-emerald-50',
+          borderColor: 'border-green-200',
+          accentColor: 'text-green-600'
+        }
+      };
+      
+      return colorMap[column.color] || configs.todo;
+    }
+    
     return configs[column.id as keyof typeof configs] || configs.todo
   }
 
@@ -158,10 +192,20 @@ export const DroppableColumn: React.FC<DroppableColumnProps> = ({
       {/* Content Area */}
       <div
         ref={setNodeRef}
-        className={`p-4 min-h-[400px] space-y-3 ${
+        className={`p-4 min-h-[500px] space-y-3 ${
           isOver && isAllowed ? "bg-gradient-to-br from-blue-50/50 to-indigo-50/50" : ""
         } ${isOver && isBlocked ? "bg-gradient-to-br from-red-50/50 to-pink-50/50" : ""}`}
       >
+        {/* Drag constraints warning */}
+        {isOver && isBlocked && dragConstraints?.reason && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-center space-x-2 text-red-700 text-sm">
+              <AlertTriangle className="h-4 w-4" />
+              <span className="font-medium">{dragConstraints.reason}</span>
+            </div>
+          </div>
+        )}
+
         {children}
 
         {/* Drop zone indicator */}
@@ -201,7 +245,7 @@ export const DroppableColumn: React.FC<DroppableColumnProps> = ({
           disabled={!!isAtCapacity}
         >
           <Plus className="h-5 w-5 mr-2 group-hover:rotate-90 transition-transform duration-300" />
-          <span className="font-semibold">Add a task</span>
+          <span className="font-semibold">{isAtCapacity ? "Column Full" : "Add a task"}</span>
         </Button>
       </div>
     </div>

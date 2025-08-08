@@ -10,12 +10,14 @@ import { boardsAPI, tasksAPI } from "../services/api"
 import { useToast } from "../hooks/use-toast"
 import { useAuth } from "../contexts/AuthContext"
 import { Sparkles, Users, Target, Clock } from 'lucide-react'
+import { getColumnIdFromStatus, getStatusFromColumnId } from "../utils/columnMapping"
 
-interface Task {
+export interface Task {
   id: string
   title: string
   description: string
   status: string
+  columnId: string
   priority: "low" | "medium" | "high"
   assignee?: {
     id: string
@@ -96,6 +98,27 @@ const BoardPage: React.FC = () => {
       },
     },
   )
+
+  const getColumnByTitle = (title: string) => {
+  // First try exact match
+  let column = columns.find(col => col.title === title);
+  
+  // If not found, try case-insensitive match
+  if (!column) {
+    column = columns.find(col => 
+      col.title.toLowerCase() === title.toLowerCase()
+    );
+  }
+  
+  // If still not found, try with partial match
+  if (!column) {
+    column = columns.find(col => 
+      col.title.toLowerCase().includes(title.toLowerCase())
+    );
+  }
+  
+  return column;
+};
 
   // Fetch tasks
   const { data: tasksData, isLoading: tasksLoading } = useQuery(
@@ -189,31 +212,98 @@ const BoardPage: React.FC = () => {
     },
   )
 
-  // Delete task handler
-  const handleTaskDelete = (taskId: string) => {
-    const deleteTaskMutation = useMutation(
-      async (id: string) => {
-        return await tasksAPI.deleteTask(id)
+  // Delete task mutation - MOVED TO TOP LEVEL
+  const deleteTaskMutation = useMutation(
+    async (id: string) => {
+      return await tasksAPI.deleteTask(id)
+    },
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(["tasks", boardId])
+        toast({
+          title: "Success",
+          description: "Task deleted successfully! 🗑️",
+        })
       },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries(["tasks", boardId])
-          toast({
-            title: "Success",
-            description: "Task deleted successfully! 🗑️",
-          })
-        },
-        onError: (error: any) => {
-          toast({
-            title: "Error",
-            description: error.response?.data?.message || "Failed to delete task",
-            variant: "destructive",
-          })
-        },
+      onError: (error: any) => {
+        toast({
+          title: "Error",
+          description: error.response?.data?.message || "Failed to delete task",
+          variant: "destructive",
+        })
       },
-    )
+    }
+  )
     
+  // Simplified handler that uses the mutation defined above
+  const handleTaskDelete = (taskId: string) => {
     deleteTaskMutation.mutate(taskId)
+  }
+
+  const handleTaskMoveFromModal = (taskId: string, newStatus: string) => {
+    console.log(`Moving task ${taskId} to status ${newStatus} from modal`)
+    
+    // Map frontend status to column title, then find the actual column
+    const statusToTitleMap: Record<string, string> = {
+      'todo': 'To Do',
+      'in-progress': 'In Progress', 
+      'review': 'Review',
+      'done': 'Done'
+    }
+    
+    const targetColumnTitle = statusToTitleMap[newStatus]
+    if (!targetColumnTitle) {
+      console.error('Unknown status:', newStatus)
+      return
+    }
+    
+    console.log(`Looking for column with title: ${targetColumnTitle}`)
+    
+    // Find the task and its current column
+    const currentTask = columns.flatMap(col => col.tasks).find(task => task.id === taskId)
+    const currentColumn = columns.find(col => col.tasks.some(task => task.id === taskId))
+    const targetColumn = columns.find(col => col.title === targetColumnTitle)
+    
+    if (!currentTask || !currentColumn || !targetColumn) {
+      console.error('Task, current column, or target column not found', {
+        currentTask: !!currentTask,
+        currentColumn: !!currentColumn,
+        targetColumn: !!targetColumn,
+        targetColumnTitle,
+        availableColumns: columns.map(c => ({ id: c.id, title: c.title }))
+      })
+      return
+    }
+    
+    // Don't move if it's already in the correct column
+    if (currentColumn.id === targetColumn.id) {
+      console.log('Task is already in the correct column')
+      return
+    }
+    
+    // Check if the move is allowed based on column constraints
+    if (targetColumn.acceptsFrom && !targetColumn.acceptsFrom.includes(currentColumn.id)) {
+      toast({
+        title: "Move Restricted",
+        description: `Tasks can only be moved to ${targetColumn.title} from: ${targetColumn.acceptsFrom.map(id => columns.find(c => c.id === id)?.title).join(', ')}`,
+        variant: "destructive",
+      })
+      return
+    }
+    
+    // Check capacity
+    if (targetColumn.maxTasks && targetColumn.tasks.length >= targetColumn.maxTasks) {
+      toast({
+        title: "Column Full",
+        description: `${targetColumn.title} is at maximum capacity (${targetColumn.maxTasks} tasks)`,
+        variant: "destructive",
+      })
+      return
+    }
+    
+    // Perform the move - add to end of target column
+    const newPosition = targetColumn.tasks.length
+    handleTaskMove(taskId, currentColumn.id, targetColumn.id, newPosition)
   }
 
   // Transform tasks data into columns (simplified without locking logic)
@@ -236,28 +326,48 @@ const BoardPage: React.FC = () => {
         columnsToUse = defaultColumns
       }
 
-      const tasksWithoutLocking = (Array.isArray(tasksData.data) ? tasksData.data : []).map((task: any) => ({
-        id: task.id?.toString() || "",
-        title: task.title || "Untitled Task",
-        description: task.description || "",
-        status: task.column_id?.toString() || task.status || "todo",
-        priority: task.priority || "medium",
-        assignee: task.assignee
-          ? {
-              id: task.assignee.id?.toString() || "",
-              name: task.assignee.name || "Unknown",
-              avatar: task.assignee.avatar || "/placeholder.svg?height=32&width=32",
-            }
-          : undefined,
-        dueDate: task.due_date || task.dueDate,
-        comments: task.comments || [],
-        createdAt: task.created_at || task.createdAt || new Date().toISOString(),
-        // Removed all locking logic
-      }))
+      const tasksWithoutLocking = (Array.isArray(tasksData.data) ? tasksData.data : []).map((task: any) => {
+        // Create dynamic status mapping based on column title
+        const getStatusFromTitle = (columnId: string) => {
+          const column = columnsToUse.find(col => col.id === columnId.toString())
+          if (!column) return 'todo'
+          
+          const titleToStatusMap: Record<string, string> = {
+            'To Do': 'todo',
+            'In Progress': 'in-progress',
+            'Review': 'review', 
+            'Done': 'done'
+          }
+          
+          return titleToStatusMap[column.title] || 'todo'
+        }
+
+        return {
+          id: task.id?.toString() || "",
+          title: task.title || "Untitled Task",
+          description: task.description || "",
+          status: getStatusFromTitle(task.column_id), // Use dynamic mapping
+          columnId: task.column_id?.toString() || "", // Make sure to include columnId
+          priority: task.priority || "medium",
+          assignee: task.assignee
+            ? {
+                id: task.assignee.id?.toString() || "",
+                name: task.assignee.name || "Unknown",
+                avatar: task.assignee.avatar || "/placeholder.svg?height=32&width=32",
+              }
+            : undefined,
+          dueDate: task.due_date || task.dueDate,
+          comments: task.comments || [],
+          createdAt: task.created_at || task.createdAt || new Date().toISOString(),
+        }
+      })
 
       const columnsWithTasks = columnsToUse.map((column) => ({
         ...column,
-        tasks: tasksWithoutLocking.filter((task: Task) => task.status === column.id),
+        tasks: tasksWithoutLocking.filter((task: Task) => 
+          // Use both status and columnId to match tasks to columns
+          task.status === column.id || task.columnId === column.id
+        ),
       }))
 
       setColumns(columnsWithTasks)
@@ -265,19 +375,32 @@ const BoardPage: React.FC = () => {
   }, [board, tasksData])
 
   const handleTaskMove = (taskId: string, sourceColumn: string, destColumn: string, position: number) => {
+    console.log(`Moving task ${taskId} from ${sourceColumn} to ${destColumn} at position ${position}`)
+    
     // Optimistic update
     setColumns((prevColumns) => {
       const newColumns = [...prevColumns]
       const sourceCol = newColumns.find((col) => col.id === sourceColumn)
       const destCol = newColumns.find((col) => col.id === destColumn)
 
-      if (!sourceCol || !destCol) return prevColumns
+      if (!sourceCol || !destCol) {
+        console.error("Source or destination column not found")
+        return prevColumns
+      }
 
       const taskIndex = sourceCol.tasks.findIndex((task) => task.id === taskId)
-      if (taskIndex === -1) return prevColumns
+      if (taskIndex === -1) {
+        console.error("Task not found in source column")
+        return prevColumns
+      }
 
       const [task] = sourceCol.tasks.splice(taskIndex, 1)
+      
+      // Update task's status to match the destination column
       task.status = destColumn
+      task.columnId = destColumn
+      
+      // Insert at specified position
       destCol.tasks.splice(position, 0, task)
 
       return newColumns
@@ -364,8 +487,10 @@ const BoardPage: React.FC = () => {
   }
 
   const totalTasks = columns.reduce((acc, col) => acc + col.tasks.length, 0)
-  const completedTasks = columns.find(col => col.id === 'done')?.tasks.length || 0
+  const completedTasks = getColumnByTitle('Done')?.tasks.length || 0;
   const progressPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
+  const inProgressTasks = getColumnByTitle('In Progress')?.tasks.length || 0;
+  const reviewTasks = getColumnByTitle('Review')?.tasks.length || 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
@@ -428,7 +553,7 @@ const BoardPage: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-yellow-100 text-sm">In Progress</p>
-                  <p className="text-2xl font-bold">{columns.find(col => col.id === 'in-progress')?.tasks.length || 0}</p>
+                  <p className="text-2xl font-bold">{inProgressTasks}</p>
                 </div>
                 <Clock className="h-8 w-8 text-yellow-200" />
               </div>
@@ -437,7 +562,7 @@ const BoardPage: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-purple-100 text-sm">In Review</p>
-                  <p className="text-2xl font-bold">{columns.find(col => col.id === 'review')?.tasks.length || 0}</p>
+                  <p className="text-2xl font-bold">{reviewTasks}</p>
                 </div>
                 <Users className="h-8 w-8 text-purple-200" />
               </div>
@@ -472,6 +597,7 @@ const BoardPage: React.FC = () => {
             onTaskUpdate={handleTaskUpdate}
             onTaskCreate={handleTaskCreate}
             onTaskDelete={handleTaskDelete}
+            onTaskMoveFromModal={handleTaskMoveFromModal} // Added this line
             userRole={user?.role}
           />
         ) : (

@@ -91,6 +91,15 @@ api.interceptors.response.use(
         })
         break
 
+      case 405:
+        // Method Not Allowed
+        safeToast({
+          title: "Method Not Allowed",
+          description: "The request method is not supported for this endpoint.",
+          variant: "destructive",
+        })
+        break
+
       case 419:
         // CSRF token mismatch
         safeToast({
@@ -267,17 +276,18 @@ export const tasksAPI = {
       due_date: taskData.due_date || taskData.dueDate || null,
     }
 
-  console.log("Formatted task data for API:", formattedData);
-  
-  // Verify important fields exist
-  if (!formattedData.column_id) {
-    console.error("Warning: column_id is missing in task data");
-  }
-  
-  const response = await api.post("/tasks", formattedData);
-  console.log("Task created successfully:", response.data);
-  return response.data;
-},
+    console.log("Formatted task data for API:", formattedData);
+    
+    // Verify important fields exist
+    if (!formattedData.column_id) {
+      console.error("Warning: column_id is missing in task data");
+    }
+    
+    const response = await api.post("/tasks", formattedData);
+    console.log("Task created successfully:", response.data);
+    return response.data;
+  },
+
   updateTask: async (id: string, taskData: any) => {
     console.log(`Updating task ${id} with data:`, taskData)
     await authAPI.getCsrfCookie()
@@ -306,10 +316,12 @@ export const tasksAPI = {
     return response.data
   },
 
+
   moveTask: async (id: string, columnId: string, position: number) => {
     console.log(`Moving task ${id} to column ${columnId} at position ${position}`)
     await authAPI.getCsrfCookie()
-    const response = await api.patch(`/tasks/${id}/move`, {
+
+    const response = await api.post(`/tasks/${id}/move`, {
       column_id: columnId,
       position,
     })

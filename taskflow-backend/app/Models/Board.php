@@ -44,6 +44,25 @@ class Board extends Model
     {
         return $this->belongsTo(User::class, 'created_by');
     }
+    /**
+     * Get the completion percentage
+     */
+    public function getCompletionPercentageAttribute(): int
+{
+    $totalTasks = $this->tasks()->count();
+    if ($totalTasks === 0) {
+        return 0;
+    }
+    
+    // Get tasks in the "Done" column
+    $completedTasks = $this->tasks()
+        ->whereHas('column', function ($query) {
+            $query->where('name', 'Done');
+        })
+        ->count();
+    
+    return (int) round(($completedTasks / $totalTasks) * 100);
+}
 
     /**
      * Get the columns of the board, ordered by position.

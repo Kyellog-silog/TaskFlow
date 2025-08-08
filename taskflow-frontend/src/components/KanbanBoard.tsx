@@ -5,8 +5,8 @@ import {
   DndContext,
   DragEndEvent,
   DragOverEvent,
-  DragOverlay,
   DragStartEvent,
+  DragOverlay,
   PointerSensor,
   useSensor,
   useSensors,
@@ -23,11 +23,12 @@ import { TaskCard } from "./TaskCard"
 import { CreateTaskModal } from "./CreateTaskModal"
 import { TaskModal } from "./TaskModal"
 
-interface Task {
+export interface Task {
   id: string
   title: string
   description: string
   status: string
+  columnId: string
   priority: "low" | "medium" | "high"
   assignee?: {
     id: string
@@ -55,6 +56,7 @@ interface KanbanBoardProps {
   onTaskUpdate: (task: Task) => void
   onTaskCreate: (taskData: any) => void
   onTaskDelete: (taskId: string) => void
+  onTaskMoveFromModal?: (taskId: string, newStatus: string) => void
   userRole?: "admin" | "member"
 }
 
@@ -64,6 +66,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   onTaskUpdate,
   onTaskCreate,
   onTaskDelete,
+  onTaskMoveFromModal,
   userRole = "member",
 }) => {
   const [activeTask, setActiveTask] = useState<Task | null>(null)
@@ -184,6 +187,56 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     setSelectedTask(task)
   }
 
+  const handleTaskMoveFromModal = (taskId: string, newStatus: string) => {
+    console.log(`Task status change requested: ${taskId} -> ${newStatus}`)
+    
+    // Map frontend status to column title
+    const statusToTitleMap: Record<string, string> = {
+      'todo': 'To Do',
+      'in-progress': 'In Progress', 
+      'review': 'Review',
+      'done': 'Done'
+    }
+    
+    const targetColumnTitle = statusToTitleMap[newStatus]
+    if (!targetColumnTitle) {
+      console.error('Unknown status:', newStatus)
+      return
+    }
+    
+    console.log(`Looking for column with title: ${targetColumnTitle}`)
+    
+    // Find current column of the task
+    const currentColumn = columns.find(col => 
+      col.tasks.some(task => task.id === taskId)
+    )
+    
+    if (!currentColumn) {
+      console.error('Current column not found for task:', taskId)
+      return
+    }
+    
+    // Find target column by title
+    const targetColumn = columns.find(col => col.title === targetColumnTitle)
+    
+    if (!targetColumn) {
+      console.error('Target column not found for title:', targetColumnTitle, 'Available columns:', columns.map(c => ({ id: c.id, title: c.title })))
+      return
+    }
+    
+    // Don't move if already in correct column
+    if (currentColumn.id === targetColumn.id) {
+      console.log('Task already in correct column')
+      return
+    }
+    
+    // Calculate position (add to end of target column)
+    const newPosition = targetColumn.tasks.length
+    
+    // Call the parent's move handler
+    onTaskMove(taskId, currentColumn.id, targetColumn.id, newPosition)
+  }
+  
   const handleTaskDelete = (taskId: string) => {
     onTaskDelete(taskId)
   }
@@ -257,17 +310,18 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       )}
 
       {/* Task Detail Modal */}
-      {selectedTask && (
-        <TaskModal
-          task={selectedTask}
-          isOpen={!!selectedTask}
-          onClose={() => setSelectedTask(null)}
-          onUpdate={(updatedTask) => {
-            onTaskUpdate(updatedTask)
-            setSelectedTask(null)
-          }}
-        />
-      )}
+    {selectedTask && (
+      <TaskModal
+        task={selectedTask}
+        isOpen={!!selectedTask}
+        onClose={() => setSelectedTask(null)}
+        onUpdate={(updatedTask) => {
+          onTaskUpdate(updatedTask)
+          setSelectedTask(null)
+        }}
+        onMove={handleTaskMoveFromModal}
+      />
+    )}
     </div>
   )
 }

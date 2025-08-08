@@ -20,6 +20,7 @@ class BoardController extends Controller
             $type = $request->get('type', 'active'); // active, archived, deleted, recent
             $limit = $request->get('limit');
             
+            
             Log::info('Fetching boards for user', [
                 'user_id' => $user->id, 
                 'type' => $type,
@@ -100,6 +101,8 @@ class BoardController extends Controller
                 'created_by' => $request->user()->id,
                 'last_visited_at' => now(), // Set initial visit time
             ]);
+
+            $board->append('completion_percentage');
 
             // Create columns (either from request or defaults)
             if (isset($validated['columns']) && !empty($validated['columns'])) {
