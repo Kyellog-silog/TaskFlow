@@ -19,11 +19,20 @@ class TaskPolicy
 
     public function update(User $user, Task $task): bool
     {
-        return $task->board->canUserAccess($user);
+        // Viewers cannot edit tasks
+        return $task->board->canUserEditTasks($user);
     }
 
     public function delete(User $user, Task $task): bool
     {
-        return $task->board->canUserManage($user) || $task->created_by === $user->id;
+        // Viewers cannot delete tasks, only board managers or task creators
+        return $task->board->canUserManage($user) || 
+               ($task->created_by === $user->id && $task->board->canUserEditTasks($user));
+    }
+
+    public function move(User $user, Task $task): bool
+    {
+        // Viewers cannot move tasks
+        return $task->board->canUserEditTasks($user);
     }
 }

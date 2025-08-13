@@ -9,6 +9,8 @@ import { LoadingSpinner } from "../components/LoadingSpinner"
 import { boardsAPI, tasksAPI } from "../services/api"
 import { useToast } from "../hooks/use-toast"
 import { useAuth } from "../contexts/AuthContext"
+import { useTaskOperations } from "../hooks/useTaskOperations"
+import webSocketService from "../services/websocket"
 import { Sparkles, Users, Target, Clock } from 'lucide-react'
 import { getColumnIdFromStatus, getStatusFromColumnId } from "../utils/columnMapping"
 
@@ -45,6 +47,75 @@ const BoardPage: React.FC = () => {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const [columns, setColumns] = useState<Column[]>([])
+  
+  // Use our enhanced task operations hook
+  const { handleTaskMove: enhancedHandleTaskMove, hasPendingOperations, isLoading: isMoveLoading } = useTaskOperations({ boardId })
+
+  // WebSocket real-time sync - with graceful degradation
+  useEffect(() => {
+    if (!boardId || !user) return
+
+    // Only try to connect WebSocket if we have a WebSocket server
+    // For now, we'll disable WebSocket to avoid connection errors
+    // You can enable this later when you set up a WebSocket server
+    const enableWebSocket = process.env.REACT_APP_ENABLE_WEBSOCKET === 'true'
+    
+    if (enableWebSocket) {
+      // Connect WebSocket if not already connected
+      if (!webSocketService.isConnected()) {
+        // Enable WebSocket functionality
+        webSocketService.enable()
+        
+        // You can replace this with your actual WebSocket server URL
+        const wsUrl = process.env.REACT_APP_WS_URL || 'ws://localhost:8080'
+        webSocketService.connect(wsUrl)
+      }
+
+      // Set up WebSocket event handlers
+      webSocketService.setEventHandlers({
+        onTaskMove: (data: any) => {
+          // Only update if this move wasn't initiated by the current user
+          if (data.userId !== user.id && !hasPendingOperations(data.taskId)) {
+            console.log('Received remote task move:', data)
+            // Update local state to reflect remote changes
+            setColumns(prevColumns => {
+              const newColumns = [...prevColumns]
+              const sourceCol = newColumns.find(col => col.id === data.fromColumn)
+              const destCol = newColumns.find(col => col.id === data.toColumn)
+              
+              if (sourceCol && destCol) {
+                const taskIndex = sourceCol.tasks.findIndex(task => task.id === data.taskId)
+                if (taskIndex !== -1) {
+                  const [task] = sourceCol.tasks.splice(taskIndex, 1)
+                  task.status = data.toColumn
+                  task.columnId = data.toColumn
+                  destCol.tasks.splice(data.position, 0, task)
+                }
+              }
+              return newColumns
+            })
+            
+            toast({
+              title: "Task Updated",
+              description: "Another user moved a task",
+              variant: "default",
+            })
+          }
+        }
+      })
+
+      // Subscribe to board updates
+      webSocketService.subscribeToBoard(boardId)
+
+      return () => {
+        webSocketService.unsubscribeFromBoard(boardId)
+      }
+    } else {
+      console.log('WebSocket is disabled - running in offline mode')
+      // Disable WebSocket to prevent connection attempts
+      webSocketService.disable()
+    }
+  }, [boardId, user, hasPendingOperations, toast])
 
   // Simplified default columns without locking
   const defaultColumns: Column[] = [
@@ -135,30 +206,6 @@ const BoardPage: React.FC = () => {
           description: error.response?.data?.message || "Failed to load tasks",
           variant: "destructive",
         })
-      },
-    },
-  )
-
-  // Move task mutation
-  const moveTaskMutation = useMutation(
-    async ({ taskId, columnId, position }: { taskId: string; columnId: string; position: number }) => {
-      return await tasksAPI.moveTask(taskId, columnId, position)
-    },
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries(["tasks", boardId])
-        toast({
-          title: "Success",
-          description: "Task moved successfully! ✨",
-        })
-      },
-      onError: (error: any) => {
-        toast({
-          title: "Error",
-          description: error.response?.data?.message || "Failed to move task",
-          variant: "destructive",
-        })
-        queryClient.invalidateQueries(["tasks", boardId])
       },
     },
   )
@@ -377,41 +424,49 @@ const BoardPage: React.FC = () => {
   const handleTaskMove = (taskId: string, sourceColumn: string, destColumn: string, position: number) => {
     console.log(`Moving task ${taskId} from ${sourceColumn} to ${destColumn} at position ${position}`)
     
-    // Optimistic update
-    setColumns((prevColumns) => {
-      const newColumns = [...prevColumns]
-      const sourceCol = newColumns.find((col) => col.id === sourceColumn)
-      const destCol = newColumns.find((col) => col.id === destColumn)
+    // Optimistic update function
+    const performOptimisticUpdate = (taskId: string, sourceColumn: string, destColumn: string, position: number) => {
+      setColumns((prevColumns) => {
+        const newColumns = [...prevColumns]
+        const sourceCol = newColumns.find((col) => col.id === sourceColumn)
+        const destCol = newColumns.find((col) => col.id === destColumn)
 
-      if (!sourceCol || !destCol) {
-        console.error("Source or destination column not found")
-        return prevColumns
+        if (!sourceCol || !destCol) {
+          console.error("Source or destination column not found")
+          return prevColumns
+        }
+
+        const taskIndex = sourceCol.tasks.findIndex((task) => task.id === taskId)
+        if (taskIndex === -1) {
+          console.error("Task not found in source column")
+          return prevColumns
+        }
+
+        const [task] = sourceCol.tasks.splice(taskIndex, 1)
+        
+        // Update task's status to match the destination column
+        task.status = destColumn
+        task.columnId = destColumn
+        
+        // Insert at specified position
+        destCol.tasks.splice(position, 0, task)
+
+        return newColumns
+      })
+    }
+
+    // Use enhanced task move with conflict resolution
+    enhancedHandleTaskMove(taskId, sourceColumn, destColumn, position, performOptimisticUpdate)
+    
+    // Broadcast real-time update to other users (only if WebSocket is enabled)
+    if (webSocketService.isConnected()) {
+      const now = Date.now()
+      const lastBroadcastTime = (window as any).lastBroadcastTime || 0
+      if (now - lastBroadcastTime > 100) {
+        webSocketService.broadcastTaskMove(taskId, boardId!, sourceColumn, destColumn, position)
+        ;(window as any).lastBroadcastTime = now
       }
-
-      const taskIndex = sourceCol.tasks.findIndex((task) => task.id === taskId)
-      if (taskIndex === -1) {
-        console.error("Task not found in source column")
-        return prevColumns
-      }
-
-      const [task] = sourceCol.tasks.splice(taskIndex, 1)
-      
-      // Update task's status to match the destination column
-      task.status = destColumn
-      task.columnId = destColumn
-      
-      // Insert at specified position
-      destCol.tasks.splice(position, 0, task)
-
-      return newColumns
-    })
-
-    // API call
-    moveTaskMutation.mutate({
-      taskId,
-      columnId: destColumn,
-      position,
-    })
+    }
   }
 
   const handleTaskUpdate = (updatedTask: Task) => {

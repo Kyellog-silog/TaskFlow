@@ -10,6 +10,7 @@ use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\BoardController;
 use App\Http\Controllers\TeamController;
+use App\Http\Controllers\TeamInvitationController;
 use App\Http\Controllers\CommentController;
 use App\Models\Task;
 use Illuminate\Support\Facades\Gate;
@@ -28,7 +29,10 @@ Route::prefix('auth')->group(function () {
     Route::post('/reset-password', [NewPasswordController::class, 'store']);
 });
 
-
+// Public team invitation routes (no auth required for viewing/accepting)
+Route::get('/invitations/{token}', [TeamInvitationController::class, 'show']);
+Route::post('/invitations/{token}/accept', [TeamInvitationController::class, 'accept'])->middleware('auth:sanctum');
+Route::post('/invitations/{token}/reject', [TeamInvitationController::class, 'reject']);
 
 // Protected routes
 Route::middleware('auth:sanctum')->group(function () {
@@ -53,6 +57,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('teams', TeamController::class);
     Route::post('/teams/{team}/members', [TeamController::class, 'addMember']);
     Route::delete('/teams/{team}/members/{user}', [TeamController::class, 'removeMember']);
+    
+    // Team invitation routes
+    Route::post('/teams/{team}/invite', [TeamInvitationController::class, 'invite']);
+    Route::get('/teams/{team}/invitations', [TeamInvitationController::class, 'index']);
+    Route::delete('/teams/{team}/invitations/{invitation}', [TeamInvitationController::class, 'destroy']);
 
     // Board routes
     Route::apiResource('boards', BoardController::class);

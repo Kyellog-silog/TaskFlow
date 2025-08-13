@@ -109,9 +109,9 @@ class TaskController extends Controller
             
             Log::info('Validated task data:', $validated);
 
-            // Check if user can access the board
+            // Check if user can create tasks on the board
             $board = Board::findOrFail($validated['board_id']);
-            Gate::authorize('view', $board);
+            Gate::authorize('createTasks', $board);
 
             // Verify the column belongs to the board
             $column = BoardColumn::where('id', $validated['column_id'])
@@ -307,13 +307,32 @@ class TaskController extends Controller
     public function move(Request $request, Task $task): JsonResponse
     {
         try {
-            Gate::authorize('update', $task);
+            Gate::authorize('move', $task);
             Log::info('Moving task', ['task_id' => $task->id, 'data' => $request->all()]);
             
             $validated = $request->validate([
                 'column_id' => 'required|exists:board_columns,id',
                 'position' => 'required|integer|min:0',
+                'operation_id' => 'nullable|string',
+                'client_timestamp' => 'nullable|integer',
             ]);
+
+            // Check for conflicts - but allow some tolerance for rapid moves from same user
+            // Only check conflicts if timestamp difference is more than 2 seconds
+            if (isset($validated['client_timestamp'])) {
+                $timeDifference = ($task->updated_at->timestamp * 1000) - $validated['client_timestamp'];
+                
+                // If task was updated more than 2 seconds after client's timestamp, it's likely a real conflict
+                if ($timeDifference > 2000) {
+                    return response()->json([
+                        'success' => false,
+                        'conflict' => true,
+                        'message' => 'Task was modified by another user',
+                        'current_state' => $task->fresh(['assignee', 'createdBy', 'column']),
+                        'time_difference' => $timeDifference
+                    ], 409);
+                }
+            }
 
             // Verify the column belongs to the same board
             $column = BoardColumn::where('id', $validated['column_id'])
@@ -379,7 +398,9 @@ class TaskController extends Controller
             
             return response()->json([
                 'success' => true,
-                'data' => $task->fresh(['assignee', 'createdBy', 'comments.user', 'board', 'column'])
+                'data' => $task->fresh(['assignee', 'createdBy', 'comments.user', 'board', 'column']),
+                'server_timestamp' => now()->timestamp * 1000,
+                'operation_id' => $validated['operation_id'] ?? null
             ]);
         } catch (\Exception $e) {
             DB::rollback();

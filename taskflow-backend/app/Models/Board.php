@@ -173,7 +173,7 @@ class Board extends Model
             return $this->created_by == $user->id;
         }
         
-        // Team boards are accessible by all team members
+        // Team boards are accessible by all team members (including viewers)
         return $this->team->isMember($user);
     }
 
@@ -187,7 +187,56 @@ class Board extends Model
             return $this->created_by == $user->id;
         }
         
-        // Team boards are manageable by team admins and the board creator
+        // Team boards are manageable by team admins and the board creator (but not viewers)
         return $this->team->isAdmin($user) || $this->createdBy?->id === $user->id;
+    }
+
+    /**
+     * Check if a user can edit tasks on this board.
+     */
+    public function canUserEditTasks(User $user): bool
+    {
+        // Personal boards can be edited by their creator
+        if (!$this->team_id) {
+            return $this->created_by == $user->id;
+        }
+        
+        // Team boards: viewers cannot edit tasks
+        return $this->team->canEditTasks($user);
+    }
+
+    /**
+     * Check if a user can create tasks on this board.
+     */
+    public function canUserCreateTasks(User $user): bool
+    {
+        return $this->canUserEditTasks($user);
+    }
+
+    /**
+     * Get the user's role for this board.
+     */
+    public function getUserRole(User $user): ?string
+    {
+        // Personal boards - creator is owner
+        if (!$this->team_id) {
+            return $this->created_by == $user->id ? 'owner' : null;
+        }
+        
+        // Team boards - get role from team
+        return $this->team->getUserRole($user);
+    }
+
+    /**
+     * Check if user is a viewer (read-only access).
+     */
+    public function isUserViewer(User $user): bool
+    {
+        // Personal boards don't have viewers
+        if (!$this->team_id) {
+            return false;
+        }
+        
+        return $this->team->isViewer($user);
     }
 }

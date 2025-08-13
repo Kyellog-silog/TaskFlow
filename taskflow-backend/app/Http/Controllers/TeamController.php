@@ -15,7 +15,32 @@ class TeamController extends Controller
         $teams = Team::forUser($request->user()->id)
                     ->with(['owner', 'members', 'boards'])
                     ->withCount(['members', 'boards'])
-                    ->get();
+                    ->get()
+                    ->map(function ($team) {
+                        // Calculate total tasks across all team boards
+                        $tasksCount = $team->boards()->withCount('tasks')->get()->sum('tasks_count');
+                        
+                        return [
+                            'id' => $team->id,
+                            'name' => $team->name,
+                            'description' => $team->description,
+                            'owner' => $team->owner,
+                            'members' => $team->members->map(function ($member) {
+                                return [
+                                    'id' => $member->id,
+                                    'name' => $member->name,
+                                    'email' => $member->email,
+                                    'avatar' => $member->avatar_url ?? null,
+                                    'role' => $member->pivot->role,
+                                    'joined_at' => $member->pivot->joined_at,
+                                ];
+                            }),
+                            'boards' => $team->boards_count,
+                            'tasks' => $tasksCount,
+                            'created_at' => $team->created_at,
+                            'updated_at' => $team->updated_at,
+                        ];
+                    });
 
         return response()->json([
             'success' => true,
@@ -49,9 +74,31 @@ class TeamController extends Controller
     {
         Gate::authorize('view', $team);
 
+        $team->load(['owner', 'members', 'boards']);
+        $tasksCount = $team->boards()->withCount('tasks')->get()->sum('tasks_count');
+
         return response()->json([
             'success' => true,
-            'data' => $team->load(['owner', 'members', 'boards'])
+            'data' => [
+                'id' => $team->id,
+                'name' => $team->name,
+                'description' => $team->description,
+                'owner' => $team->owner,
+                'members' => $team->members->map(function ($member) {
+                    return [
+                        'id' => $member->id,
+                        'name' => $member->name,
+                        'email' => $member->email,
+                        'avatar' => $member->avatar_url ?? null,
+                        'role' => $member->pivot->role,
+                        'joined_at' => $member->pivot->joined_at,
+                    ];
+                }),
+                'boards' => $team->boards->count(),
+                'tasks' => $tasksCount,
+                'created_at' => $team->created_at,
+                'updated_at' => $team->updated_at,
+            ]
         ]);
     }
 
@@ -135,6 +182,33 @@ class TeamController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Member removed successfully'
+        ]);
+    }
+
+    public function getTeamBoards(Team $team): JsonResponse
+    {
+        Gate::authorize('view', $team);
+
+        $boards = $team->boards()
+                      ->with(['columns', 'createdBy'])
+                      ->withCount(['tasks', 'columns'])
+                      ->get()
+                      ->map(function ($board) {
+                          return [
+                              'id' => $board->id,
+                              'name' => $board->name,
+                              'description' => $board->description,
+                              'created_by' => $board->createdBy,
+                              'tasks_count' => $board->tasks_count,
+                              'columns_count' => $board->columns_count,
+                              'created_at' => $board->created_at,
+                              'updated_at' => $board->updated_at,
+                          ];
+                      });
+
+        return response()->json([
+            'success' => true,
+            'data' => $boards
         ]);
     }
 }

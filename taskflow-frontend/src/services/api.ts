@@ -317,13 +317,17 @@ export const tasksAPI = {
   },
 
 
-  moveTask: async (id: string, columnId: string, position: number) => {
+  moveTask: async (id: string, columnId: string, position: number, metadata?: { operation_id?: string; client_timestamp?: number }) => {
     console.log(`Moving task ${id} to column ${columnId} at position ${position}`)
     await authAPI.getCsrfCookie()
 
     const response = await api.post(`/tasks/${id}/move`, {
       column_id: columnId,
       position,
+      ...(metadata && {
+        operation_id: metadata.operation_id,
+        client_timestamp: metadata.client_timestamp
+      })
     })
     console.log("Task moved successfully")
     return response.data
@@ -491,6 +495,23 @@ export const teamsAPI = {
     await authAPI.getCsrfCookie()
     const response = await api.patch(`/teams/${teamId}/members/${userId}`, { role })
     console.log("Member role updated successfully")
+    return response.data
+  },
+
+  // Get team boards
+  getTeamBoards: async (teamId: string) => {
+    console.log(`Fetching boards for team ${teamId}`)
+    const response = await api.get(`/teams/${teamId}/boards`)
+    console.log("Team boards fetched successfully")
+    return response.data
+  },
+
+  // Invite member by email (uses invitation system)
+  inviteMember: async (teamId: string, email: string, role = "member") => {
+    console.log(`Inviting ${email} to team ${teamId} with role ${role}`)
+    await authAPI.getCsrfCookie()
+    const response = await api.post(`/teams/${teamId}/invite`, { email, role })
+    console.log("Team invitation sent successfully")
     return response.data
   },
 }

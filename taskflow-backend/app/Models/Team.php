@@ -52,13 +52,22 @@ class Team extends Model
     public function members(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'team_members')
-                    ->withPivot('role', 'joined_at')
-                    ->withTimestamps();
+                    ->withPivot(['role', 'joined_at']);
     }
 
     public function boards(): HasMany
     {
         return $this->hasMany(Board::class);
+    }
+
+    public function invitations(): HasMany
+    {
+        return $this->hasMany(TeamInvitation::class);
+    }
+
+    public function pendingInvitations(): HasMany
+    {
+        return $this->hasMany(TeamInvitation::class)->pending();
     }
 
     public function scopeForUser($query, $userId)
@@ -102,5 +111,38 @@ class Team extends Model
 
         $member = $this->members->find($user->id);
         return $member && $member->pivot->role === 'admin';
+    }
+
+    public function isViewer(User $user): bool
+    {
+        $member = $this->members->find($user->id);
+        return $member && $member->pivot->role === 'viewer';
+    }
+
+    public function canManageMembers(User $user): bool
+    {
+        return $this->isOwner($user) || $this->isAdmin($user);
+    }
+
+    public function canCreateBoards(User $user): bool
+    {
+        // Only admins and regular members can create boards, not viewers
+        return $this->isOwner($user) || $this->isAdmin($user) || ($this->isMember($user) && !$this->isViewer($user));
+    }
+
+    public function canEditTasks(User $user): bool
+    {
+        // Viewers can only view, not edit
+        return $this->isOwner($user) || $this->isAdmin($user) || ($this->isMember($user) && !$this->isViewer($user));
+    }
+
+    public function getUserRole(User $user): ?string
+    {
+        if ($this->isOwner($user)) {
+            return 'owner';
+        }
+
+        $member = $this->members->find($user->id);
+        return $member ? $member->pivot->role : null;
     }
 }

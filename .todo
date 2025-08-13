@@ -1,1 +1,82 @@
-1. Optimze the movetask function for better performance.
+'1️⃣ User & Team Management
+ Set up team model & migrations in Laravel (team name, owner, timestamps).
+
+ Create pivot table for team_user (user_id, team_id, role).
+
+ Add team CRUD endpoints in Laravel (create, update, delete team).
+
+ Implement invitation system:
+
+ Backend endpoint to generate unique invite token (UUID).
+
+ Store token + team_id + invited_email + expiry date.
+
+ Send invite email with token link.
+
+ Handle invite acceptance:
+
+ Verify token.
+
+ Add user to team_user table with role.'
+
+2️⃣ Permissions & Roles
+ Create roles column in team_user (e.g., owner, admin, member, viewer).
+
+ Implement Laravel policies/middleware to check role before actions.
+
+ Ensure only owner or admin can invite/remove members.
+
+3️⃣ Real-Time Collaboration
+ Install & configure Laravel WebSockets or Pusher.
+
+ Set up broadcast channels:
+
+Board.{boardId} for all events on a specific board.
+
+ Create Laravel Events:
+
+TaskCreated
+
+TaskUpdated
+
+TaskMoved
+
+TaskDeleted
+
+ Broadcast events to channel whenever changes happen.
+
+ On React frontend:
+
+Connect to channel via Laravel Echo.
+
+Listen for board events and update state instantly.
+
+4️⃣ Frontend Integration
+ Team management UI:
+
+ List members with roles.
+
+ Invite user by email.
+
+ Remove member.
+
+ Invite acceptance page:
+
+ Accept invite token and call backend endpoint.
+
+ Real-time Kanban board:
+
+ Optimistic UI updates when moving/creating tasks.
+
+ Update board when WebSocket events are received.
+
+5️⃣ Extras (Optional)
+ Activity logs (who moved/edited what & when).
+
+ Presence indicators (show which team members are online).
+
+ Typing indicators or live cursors for fun.
+
+
+
+PROBABLY SET UP GOOGLE API FOR LOGIN?!

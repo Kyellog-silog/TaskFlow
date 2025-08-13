@@ -537,10 +537,22 @@ const BoardsPage = () => {
   )
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      <Header />
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 relative overflow-hidden">
+      {/* Animated Background Elements */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-blue-400 to-purple-400 rounded-full opacity-20 animate-pulse"></div>
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-tr from-purple-400 to-pink-400 rounded-full opacity-20 animate-pulse delay-1000"></div>
+        <div
+          className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-gradient-to-r from-cyan-400 to-blue-400 rounded-full opacity-10 animate-spin"
+          style={{ animationDuration: "20s" }}
+        ></div>
+      </div>
 
-      <main className="container mx-auto px-4 py-8">
+      <div className="relative z-10">
+        <Header />
+
+        <main className="container mx-auto px-4 py-8">
+
         {/* Header Section */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center space-x-4">
@@ -760,47 +772,48 @@ const BoardsPage = () => {
           </TabsContent>
         </Tabs>
       </main>
-
-      {/* Modals */}
-      {deleteBoard && (
-        <DeleteBoardModal
-          board={deleteBoard}
-          isOpen={!!deleteBoard}
-          onClose={() => setDeleteBoard(null)}
-          onConfirm={() => deleteBoardMutation.mutate(deleteBoard.id)}
-          isLoading={deleteBoardMutation.isLoading}
-        />
-      )}
-
-      {editBoard && (
-        <EditBoardModal
-          board={editBoard}
-          isOpen={!!editBoard}
-          onClose={() => setEditBoard(null)}
-          onBoardUpdated={handleBoardUpdated}
-        />
-      )}
-
-      {restoreBoard && (
-        <RestoreBoardModal
-          board={restoreBoard}
-          isOpen={!!restoreBoard}
-          onClose={() => setRestoreBoard(null)}
-          onConfirm={() => restoreBoardMutation.mutate(restoreBoard.id)}
-          isLoading={restoreBoardMutation.isLoading}
-        />
-      )}
-
-      {archiveBoard && (
-        <ArchiveBoardModal
-          board={archiveBoard}
-          isOpen={!!archiveBoard}
-          onClose={() => setArchiveBoard(null)}
-          onConfirm={() => archiveBoardMutation.mutate(archiveBoard.id)}
-          isLoading={archiveBoardMutation.isLoading}
-        />
-      )}
     </div>
+
+  {/* Modals */}
+  {deleteBoard && (
+    <DeleteBoardModal
+      board={deleteBoard}
+      isOpen={!!deleteBoard}
+      onClose={() => setDeleteBoard(null)}
+      onConfirm={() => deleteBoardMutation.mutate(deleteBoard.id)}
+      isLoading={deleteBoardMutation.isLoading}
+    />
+  )}
+
+  {editBoard && (
+    <EditBoardModal
+      board={editBoard}
+      isOpen={!!editBoard}
+      onClose={() => setEditBoard(null)}
+      onBoardUpdated={handleBoardUpdated}
+    />
+  )}
+
+  {restoreBoard && (
+    <RestoreBoardModal
+      board={restoreBoard}
+      isOpen={!!restoreBoard}
+      onClose={() => setRestoreBoard(null)}
+      onConfirm={() => restoreBoardMutation.mutate(restoreBoard.id)}
+      isLoading={restoreBoardMutation.isLoading}
+    />
+  )}
+
+  {archiveBoard && (
+    <ArchiveBoardModal
+      board={archiveBoard}
+      isOpen={!!archiveBoard}
+      onClose={() => setArchiveBoard(null)}
+      onConfirm={() => archiveBoardMutation.mutate(archiveBoard.id)}
+      isLoading={archiveBoardMutation.isLoading}
+    />
+  )}
+</div>
   )
 }
 

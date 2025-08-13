@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useState, useEffect } from "react"
+import { useMutation, useQueryClient } from "react-query"
 import { Users, Settings, Crown, Mail, Calendar, Target, Sparkles, Send, X, Save, UserPlus, UserMinus, Shield, Trash2, Edit, Eye } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Button } from "./ui/button"
@@ -12,11 +13,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
 import { Separator } from "./ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs"
+import { teamsAPI } from "../services/api"
+import { useToast } from "../hooks/use-toast"
 
 interface TeamMember {
   id: string
   name: string
-  role: "admin" | "member"
+  role: "admin" | "member" | "viewer"
   avatar: string
   email?: string
   joinedAt?: string
@@ -47,15 +50,89 @@ interface TeamModalProps {
 export function TeamModal({ team, isOpen, onClose, onUpdate }: TeamModalProps) {
   const [editedTeam, setEditedTeam] = useState<Team>(team)
   const [newMemberEmail, setNewMemberEmail] = useState("")
+  const [newMemberRole, setNewMemberRole] = useState("member")
   const [activeTab, setActiveTab] = useState("overview")
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
+
+  // Update team mutation
+  const updateTeamMutation = useMutation(
+    ({ id, data }: { id: string; data: any }) => teamsAPI.updateTeam(id, data),
+    {
+      onSuccess: () => {
+        toast({ title: "Success", description: "Team updated successfully!" })
+        queryClient.invalidateQueries("teams")
+        onUpdate(editedTeam)
+      },
+      onError: () => {
+        toast({ title: "Error", description: "Failed to update team", variant: "destructive" })
+      }
+    }
+  )
+
+  // Invite member mutation
+  const inviteMemberMutation = useMutation(
+    ({ teamId, email, role }: { teamId: string; email: string; role: string }) => 
+      teamsAPI.inviteMember(teamId, email, role),
+    {
+      onSuccess: () => {
+        toast({ title: "Success", description: "Invitation sent successfully! 📧" })
+        setNewMemberEmail("")
+        setNewMemberRole("member")
+        queryClient.invalidateQueries("teams")
+      },
+      onError: () => {
+        toast({ title: "Error", description: "Failed to send invitation", variant: "destructive" })
+      }
+    }
+  )
+
+  // Remove member mutation
+  const removeMemberMutation = useMutation(
+    ({ teamId, userId }: { teamId: string; userId: string }) => 
+      teamsAPI.removeMember(teamId, userId),
+    {
+      onSuccess: () => {
+        toast({ title: "Success", description: "Member removed successfully" })
+        queryClient.invalidateQueries("teams")
+      },
+      onError: () => {
+        toast({ title: "Error", description: "Failed to remove member", variant: "destructive" })
+      }
+    }
+  )
 
   useEffect(() => {
     setEditedTeam(team)
   }, [team])
 
   const handleSave = () => {
-    onUpdate(editedTeam)
-    onClose()
+    updateTeamMutation.mutate({
+      id: editedTeam.id,
+      data: {
+        name: editedTeam.name,
+        description: editedTeam.description
+      }
+    })
+  }
+
+  const handleInviteMember = () => {
+    if (!newMemberEmail.trim()) return
+    
+    inviteMemberMutation.mutate({
+      teamId: team.id,
+      email: newMemberEmail,
+      role: newMemberRole
+    })
+  }
+
+  const handleRemoveMember = (memberId: string) => {
+    if (confirm("Are you sure you want to remove this member from the team?")) {
+      removeMemberMutation.mutate({
+        teamId: team.id,
+        userId: memberId
+      })
+    }
   }
 
   const getTeamColorConfig = (color?: string) => {
@@ -289,14 +366,7 @@ export function TeamModal({ team, isOpen, onClose, onUpdate }: TeamModalProps) {
                   <div className="bg-white/80 backdrop-blur-sm rounded-xl p-6 border-2 border-gray-200">
                     <h3 className="text-lg font-bold text-gray-800 mb-4">Team Information</h3>
                     <div className="space-y-4">
-                      <div>
-                        <label className="text-sm font-bold text-gray-800 mb-2 block">Team Name</label>
-                        <Input
-                          value={editedTeam.name}
-                          onChange={(e) => setEditedTeam({ ...editedTeam, name: e.target.value })}
-                          className="bg-white border-2 border-gray-200 focus:border-blue-500"
-                        />
-                      </div>
+ 
                       <div>
                         <label className="text-sm font-bold text-gray-800 mb-2 block">Description</label>
                         <Textarea
