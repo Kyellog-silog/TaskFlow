@@ -1,6 +1,6 @@
 import axios, { type AxiosResponse, type AxiosError } from "axios"
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000"
+export const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8000"
 
 // Create axios instance
 const api = axios.create({
@@ -242,6 +242,25 @@ export const authAPI = {
     console.log("Verification email sent")
     return response.data
   },
+
+  updateProfile: async (profileData: any) => {
+    console.log("Updating profile with data:", profileData)
+    await authAPI.getCsrfCookie()
+    const response = await api.put("/user/profile", profileData)
+    console.log("Profile updated successfully")
+    return response.data
+  },
+  uploadAvatar: async (file: File) => {
+    console.log("Uploading avatar")
+    await authAPI.getCsrfCookie()
+    const form = new FormData()
+    form.append('avatar', file)
+    const response = await api.post(`/profile/avatar`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    console.log("Avatar uploaded")
+    return response.data
+  },
 }
 
 // Tasks API
@@ -251,6 +270,20 @@ export const tasksAPI = {
     console.log(`Fetching tasks${boardId ? ` for board ${boardId}` : ''}`)
     const response = await api.get(url)
     console.log("Tasks fetched successfully")
+    return response.data
+  },
+
+  // Lightweight counters for dashboard widgets
+  getDueTodayCount: async () => {
+    const response = await api.get(`/tasks?due=today&uncompleted=1&only_count=1`)
+    return response.data
+  },
+  getDueSoonCount: async (days = 3) => {
+    const response = await api.get(`/tasks?due=soon&days=${days}&uncompleted=1&only_count=1`)
+    return response.data
+  },
+  getOverdueCount: async () => {
+    const response = await api.get(`/tasks?due=overdue&uncompleted=1&only_count=1`)
     return response.data
   },
 
@@ -432,6 +465,32 @@ export const boardsAPI = {
     console.log("Board restored successfully:", response.data)
     return response.data
   },
+
+  // Add team to board
+  addTeamToBoard: async (boardId: string, teamId: string) => {
+    console.log(`Adding team ${teamId} to board ${boardId}...`)
+    await authAPI.getCsrfCookie()
+    const response = await api.post(`/boards/${boardId}/teams/${teamId}`)
+    console.log("Team added to board successfully:", response.data)
+    return response.data
+  },
+
+  // Remove team from board
+  removeTeamFromBoard: async (boardId: string, teamId: string) => {
+    console.log(`Removing team ${teamId} from board ${boardId}...`)
+    await authAPI.getCsrfCookie()
+    const response = await api.delete(`/boards/${boardId}/teams/${teamId}`)
+    console.log("Team removed from board successfully:", response.data)
+    return response.data
+  },
+
+  // Get board teams
+  getBoardTeams: async (boardId: string) => {
+    console.log(`Getting teams for board ${boardId}...`)
+    const response = await api.get(`/boards/${boardId}/teams`)
+    console.log("Board teams fetched successfully:", response.data)
+    return response.data
+  },
 }
 
 // Teams API
@@ -493,7 +552,7 @@ export const teamsAPI = {
   updateMemberRole: async (teamId: string, userId: string, role: string) => {
     console.log(`Updating role for member ${userId} in team ${teamId} to ${role}`)
     await authAPI.getCsrfCookie()
-    const response = await api.patch(`/teams/${teamId}/members/${userId}`, { role })
+    const response = await api.put(`/teams/${teamId}/members/${userId}/role`, { role })
     console.log("Member role updated successfully")
     return response.data
   },
@@ -525,10 +584,12 @@ export const commentsAPI = {
     return response.data
   },
 
-  createComment: async (taskId: string, content: string) => {
-    console.log(`Creating comment for task ${taskId}`)
+  createComment: async (taskId: string, content: string, parentId?: string) => {
+    console.log(`Creating comment for task ${taskId}${parentId ? ` (reply to ${parentId})` : ''}`)
     await authAPI.getCsrfCookie()
-    const response = await api.post(`/tasks/${taskId}/comments`, { content })
+    const payload: any = { content }
+    if (parentId) payload.parent_id = parentId
+    const response = await api.post(`/tasks/${taskId}/comments`, payload)
     console.log("Comment created successfully")
     return response.data
   },
@@ -538,6 +599,28 @@ export const commentsAPI = {
     await authAPI.getCsrfCookie()
     const response = await api.delete(`/tasks/${taskId}/comments/${commentId}`)
     console.log("Comment deleted successfully")
+    return response.data
+  },
+}
+
+// Notifications API
+export const notificationsAPI = {
+  list: async (limit = 10) => {
+    const response = await api.get(`/notifications?limit=${limit}`)
+    return response.data
+  },
+  getUnreadCount: async () => {
+    const response = await api.get(`/notifications/unread-count`)
+    return response.data
+  },
+  markRead: async (notificationId: string) => {
+    await authAPI.getCsrfCookie()
+    const response = await api.post(`/notifications/${notificationId}/read`)
+    return response.data
+  },
+  markAllRead: async () => {
+    await authAPI.getCsrfCookie()
+    const response = await api.post(`/notifications/read-all`)
     return response.data
   },
 }

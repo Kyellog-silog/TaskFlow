@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('team_id')->constrained()->onDelete('cascade');
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->enum('role', ['admin', 'member'])->default('member');
+            $table->enum('role', ['admin', 'member', 'viewer'])->default('member');
             $table->timestamp('joined_at')->useCurrent();
             $table->unique(['team_id', 'user_id']);
         });

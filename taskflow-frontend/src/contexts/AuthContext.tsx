@@ -14,6 +14,10 @@ interface User {
   email: string
   role: "admin" | "member"
   avatar?: string
+  bio?: string
+  phone?: string
+  location?: string
+  website?: string
 }
 
 interface AuthContextType {
@@ -21,6 +25,8 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>
   register: (name: string, email: string, password: string, password_confirmation: string)  => Promise<void>
   logout: () => void
+  updateProfile: (profileData: any) => Promise<void>
+  refreshUser: () => Promise<void>
   isLoading: boolean
 }
 
@@ -87,11 +93,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }
 
+  const updateProfile = async (profileData: any) => {
+    try {
+      const response = await authAPI.updateProfile(profileData);
+      if (response.success && response.data?.user) {
+        setUser(response.data.user);
+      }
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  const refreshUser = async () => {
+    try {
+      const response = await authAPI.getUser();
+      if (response.success && response.data.user) {
+        setUser(response.data.user);
+      }
+    } catch (error) {
+      console.error('Failed to refresh user data:', error);
+      // Don't throw error as this is a background refresh
+    }
+  }
+
   const value = {
     user,
     login,
     register,
     logout,
+    updateProfile,
+    refreshUser,
     isLoading,
   }
 

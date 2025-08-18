@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useState, useEffect } from "react"
-import { MessageSquare, User, Clock, Tag, Calendar, Flag, Sparkles, Send, X, Save } from 'lucide-react'
+import { MessageSquare, User, Clock, Tag, Calendar, Flag, Sparkles, Send, X, Save, CornerDownRight } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -11,6 +11,10 @@ import { Badge } from "./ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
 import { Separator } from "./ui/separator"
+import { useQuery, useMutation, useQueryClient } from "react-query"
+import { commentsAPI } from "../services/api"
+// SSE handled globally in App-level bridge
+import { useAuth } from "../contexts/AuthContext"
 
 interface Task {
   id: string
@@ -51,6 +55,10 @@ export function TaskModal({ task, isOpen, onClose, onUpdate, onMove }: TaskModal
   const [editedTask, setEditedTask] = useState<Task>(task)
   const [newComment, setNewComment] = useState("")
   const [originalStatus, setOriginalStatus] = useState(task.status)
+  const [replyOpenFor, setReplyOpenFor] = useState<string | null>(null)
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({})
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
 
   // Update editedTask when task prop changes
   useEffect(() => {
@@ -117,6 +125,44 @@ export function TaskModal({ task, isOpen, onClose, onUpdate, onMove }: TaskModal
   }
 
   const priorityConfig = getPriorityConfig(editedTask.priority)
+
+  // Load comments for this task
+  const { data: commentsData } = useQuery([
+    "comments",
+    task.id,
+  ], () => commentsAPI.getComments(task.id), { enabled: !!task.id })
+
+  // Keep editedTask.comments in sync with fetched comments
+  useEffect(() => {
+    if (commentsData?.data) {
+      setEditedTask((prev) => ({ ...prev, comments: commentsData.data }))
+    }
+  }, [commentsData])
+
+  // Post a new top-level comment
+  const addCommentMutation = useMutation(
+    async (content: string) => commentsAPI.createComment(task.id, content),
+    {
+      onSuccess: () => {
+        setNewComment("")
+        queryClient.invalidateQueries(["comments", task.id])
+      },
+    },
+  )
+
+  // Post a reply to a comment
+  const addReplyMutation = useMutation(
+    async ({ parentId, content }: { parentId: string; content: string }) =>
+      commentsAPI.createComment(task.id, content, parentId),
+    {
+      onSuccess: (_res, vars) => {
+        setReplyDrafts((d) => ({ ...d, [vars.parentId]: "" }))
+        queryClient.invalidateQueries(["comments", task.id])
+      },
+    },
+  )
+
+  // Real-time updates handled by App-level SSE bridge which invalidates ["comments", taskId]
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -300,30 +346,103 @@ export function TaskModal({ task, isOpen, onClose, onUpdate, onMove }: TaskModal
               </h3>
             </div>
 
-            {/* Existing Comments */}
-            <div className="space-y-4 max-h-40 overflow-y-auto">
-              {editedTask.comments.map((comment) => (
-                <div key={comment.id} className="flex space-x-3 p-4 bg-white rounded-xl border border-gray-200 shadow-sm">
-                  <Avatar className="h-10 w-10 ring-2 ring-gray-200">
-                    <AvatarImage src={comment.author.avatar || "/placeholder.svg"} />
-                    <AvatarFallback className="bg-gradient-to-br from-gray-500 to-gray-600 text-white">
-                      {comment.author.name
-                        ?.split(" ")
-                        .map((n) => n[0])
-                        .join("")}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <span className="font-semibold text-gray-900">{comment.author.name}</span>
-                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                        {new Date(comment.createdAt).toLocaleDateString()}
-                      </span>
+            {/* Existing Comments (with replies) */}
+            <div className="space-y-4 max-h-60 overflow-y-auto">
+              {(editedTask.comments || []).map((comment: any) => {
+                const authorName = comment.user?.name || comment.author?.name || "User"
+                const avatar = comment.user?.avatar || comment.author?.avatar || "/placeholder.svg"
+                const createdAt = comment.created_at || comment.createdAt
+                const replies = comment.replies || []
+                return (
+                  <div key={comment.id} className="p-4 bg-white rounded-xl border border-gray-200 shadow-sm">
+                    <div className="flex space-x-3">
+                      <Avatar className="h-10 w-10 ring-2 ring-gray-200">
+                        <AvatarImage src={avatar} />
+                        <AvatarFallback className="bg-gradient-to-br from-gray-500 to-gray-600 text-white">
+                          {authorName.split(" ").map((n: string) => n[0]).join("")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <span className="font-semibold text-gray-900">{authorName}</span>
+                          <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                            {createdAt ? new Date(createdAt).toLocaleString() : ""}
+                          </span>
+                        </div>
+                        <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{comment.content}</p>
+
+                        {/* Replies */}
+                        {replies.length > 0 && (
+                          <div className="mt-3 space-y-3 pl-6 border-l-2 border-gray-100">
+                            {replies.map((rep: any) => {
+                              const repName = rep.user?.name || "User"
+                              const repAvatar = rep.user?.avatar || "/placeholder.svg"
+                              const repAt = rep.created_at || rep.createdAt
+                              return (
+                                <div key={rep.id} className="flex space-x-3">
+                                  <CornerDownRight className="h-4 w-4 text-gray-300 mt-3" />
+                                  <Avatar className="h-8 w-8 ring-2 ring-gray-200">
+                                    <AvatarImage src={repAvatar} />
+                                    <AvatarFallback className="bg-gradient-to-br from-gray-500 to-gray-600 text-white text-xs">
+                                      {repName.split(" ").map((n: string) => n[0]).join("")}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div className="flex-1">
+                                    <div className="flex items-center space-x-2 mb-1">
+                                      <span className="font-semibold text-gray-900 text-sm">{repName}</span>
+                                      <span className="text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                                        {repAt ? new Date(repAt).toLocaleString() : ""}
+                                      </span>
+                                    </div>
+                                    <p className="text-gray-700 text-sm whitespace-pre-wrap">{rep.content}</p>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+
+                        {/* Reply box */}
+                        <div className="mt-3 pl-6">
+                          {replyOpenFor === comment.id ? (
+                            <div className="flex items-start space-x-2">
+                              <Textarea
+                                placeholder="Write a reply..."
+                                value={replyDrafts[comment.id] || ""}
+                                onChange={(e) => setReplyDrafts((d) => ({ ...d, [comment.id]: e.target.value }))}
+                                rows={2}
+                                className="bg-white border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-900"
+                              />
+                              <Button
+                                onClick={() => {
+                                  const content = (replyDrafts[comment.id] || "").trim()
+                                  if (!content) return
+                                  addReplyMutation.mutate({ parentId: comment.id, content })
+                                  setReplyOpenFor(null)
+                                }}
+                                disabled={addReplyMutation.isLoading || !(replyDrafts[comment.id] || "").trim()}
+                                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                              >
+                                <Send className="h-4 w-4 mr-2" />
+                                Reply
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setReplyOpenFor(comment.id)}
+                              className="text-blue-600 hover:bg-blue-50"
+                            >
+                              Reply
+                            </Button>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-gray-700 leading-relaxed">{comment.content}</p>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
 
             {/* Add New Comment */}
@@ -344,9 +463,13 @@ export function TaskModal({ task, isOpen, onClose, onUpdate, onMove }: TaskModal
                     className="bg-white border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 text-gray-900 placeholder:text-gray-500"
                   />
                   <Button 
-                    onClick={() => {}}
+                    onClick={() => {
+                      const content = newComment.trim()
+                      if (!content) return
+                      addCommentMutation.mutate(content)
+                    }}
                     className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
-                    disabled={!newComment.trim()}
+                    disabled={!newComment.trim() || addCommentMutation.isLoading}
                   >
                     <Send className="h-4 w-4 mr-2" />
                     Add Comment

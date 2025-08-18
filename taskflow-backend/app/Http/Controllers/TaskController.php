@@ -6,6 +6,8 @@ use App\Models\Task;
 use App\Models\Board;
 use App\Models\BoardColumn;
 use App\Models\TaskActivity;
+use App\Models\Notification;
+use App\Http\Controllers\EventsController;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
@@ -32,9 +34,9 @@ class TaskController extends Controller
                 Gate::authorize('view', $board);
                 $query->byBoard($request->board_id);
             } else {
-                // Only show tasks from boards the user can access
+                // Only show tasks from boards the user can access and that are active (not archived)
                 $query->whereHas('board', function ($q) use ($user) {
-                    $q->forUser($user->id);
+                    $q->forUser($user->id)->active();
                 });
             }
 
@@ -63,9 +65,55 @@ class TaskController extends Controller
                 $query->where('column_id', $request->status);
             }
 
+            // Filter to only uncompleted tasks
+            if ($request->boolean('uncompleted')) {
+                $query->whereNull('completed_at');
+                // Also exclude tasks that are already in a "Done/Complete" column (legacy tasks without completed_at)
+                $query->whereHas('column', function ($cq) {
+                    $cq->whereRaw('LOWER(name) NOT LIKE ?', ['%done%'])
+                       ->whereRaw('LOWER(name) NOT LIKE ?', ['%complete%']);
+                });
+            }
+
+            // Due date based filters
+            if ($request->has('due')) {
+                $due = $request->get('due');
+                // Exclude tasks without a due_date for any due-based filter
+                $query->whereNotNull('due_date');
+                switch ($due) {
+                    case 'today':
+                        $query->whereDate('due_date', now()->toDateString());
+                        break;
+                    case 'tomorrow':
+                        $query->whereDate('due_date', now()->addDay()->toDateString());
+                        break;
+                    case 'overdue':
+                        $query->whereDate('due_date', '<', now()->toDateString());
+                        break;
+                    case 'soon':
+                        // Tasks due between today and N days from now (inclusive)
+                        $days = (int) $request->get('days', 3);
+                        if ($days < 0) { $days = 0; }
+                        $start = now()->startOfDay();
+                        $end = now()->addDays($days)->endOfDay();
+                        $query->whereBetween('due_date', [$start, $end]);
+                        break;
+                }
+            }
+
             // Limit results
             if ($request->has('limit')) {
                 $query->limit($request->limit);
+            }
+
+            // Only return a count when requested to keep dashboard light-weight
+            if ($request->boolean('only_count')) {
+                $count = $query->count();
+                Log::info('Tasks count fetched successfully', ['count' => $count]);
+                return response()->json([
+                    'success' => true,
+                    'data' => ['count' => $count]
+                ]);
             }
 
             $tasks = $query->orderBy('position')->get();
@@ -148,6 +196,18 @@ class TaskController extends Controller
             // Load the task with relationships
             $task = $task->fresh(['assignee', 'createdBy', 'comments.user', 'board', 'column']);
             Log::info('Task created successfully', ['task_id' => $task->id]);
+
+            // Emit SSE event for real-time updates
+            try {
+                EventsController::queueEvent('task.created', [
+                    'boardId' => $task->board_id,
+                    'taskId' => $task->id,
+                    'columnId' => $task->column_id,
+                    'position' => $task->position,
+                    'userId' => Auth::id(),
+                    'timestamp' => now()->toISOString(),
+                ]);
+            } catch (\Throwable $e) {}
             
             return response()->json([
                 'success' => true,
@@ -244,6 +304,16 @@ class TaskController extends Controller
             DB::commit();
             
             Log::info('Task updated successfully', ['task_id' => $task->id]);
+
+            // Emit SSE event for real-time updates
+            try {
+                EventsController::queueEvent('task.updated', [
+                    'boardId' => $task->board_id,
+                    'taskId' => $task->id,
+                    'userId' => Auth::id(),
+                    'timestamp' => now()->toISOString(),
+                ]);
+            } catch (\Throwable $e) {}
             
             return response()->json([
                 'success' => true,
@@ -281,6 +351,16 @@ class TaskController extends Controller
             DB::commit();
             
             Log::info('Task deleted successfully', ['task_id' => $task->id]);
+
+            // Emit SSE event for real-time updates
+            try {
+                EventsController::queueEvent('task.deleted', [
+                    'boardId' => $task->board_id,
+                    'taskId' => $task->id,
+                    'userId' => Auth::id(),
+                    'timestamp' => now()->toISOString(),
+                ]);
+            } catch (\Throwable $e) {}
             
             return response()->json([
                 'success' => true,
@@ -395,6 +475,19 @@ class TaskController extends Controller
                 'from' => ['column' => $oldColumnId, 'position' => $oldPosition],
                 'to' => ['column' => $validated['column_id'], 'position' => $validated['position']]
             ]);
+
+            // Emit SSE event for real-time updates
+            try {
+                EventsController::queueEvent('task.moved', [
+                    'boardId' => $task->board_id,
+                    'taskId' => $task->id,
+                    'fromColumn' => $oldColumnId,
+                    'toColumn' => $validated['column_id'],
+                    'position' => $validated['position'],
+                    'userId' => Auth::id(),
+                    'timestamp' => now()->toISOString(),
+                ]);
+            } catch (\Throwable $e) {}
             
             return response()->json([
                 'success' => true,
@@ -441,6 +534,38 @@ class TaskController extends Controller
             DB::commit();
             
             Log::info('Task marked as completed successfully', ['task_id' => $task->id]);
+
+            // Emit SSE event for real-time updates
+            try {
+                EventsController::queueEvent('task.updated', [
+                    'boardId' => $task->board_id,
+                    'taskId' => $task->id,
+                    'userId' => Auth::id(),
+                    'timestamp' => now()->toISOString(),
+                ]);
+                // Notify assignee and creator (excluding actor)
+                $actorId = (int) Auth::id();
+                $targets = collect([$task->assignee_id, $task->created_by])
+                    ->filter()
+                    ->unique()
+                    ->reject(fn ($id) => (int)$id === $actorId);
+                foreach ($targets as $uid) {
+                    Notification::create([
+                        'user_id' => $uid,
+                        'type' => 'task.completed',
+                        'data' => [
+                            'task_id' => $task->id,
+                            'board_id' => $task->board_id,
+                            'actor_id' => $actorId,
+                        ],
+                    ]);
+                }
+                if ($targets->isNotEmpty()) {
+                    EventsController::queueEvent('notification.created', [
+                        'timestamp' => now()->toISOString(),
+                    ]);
+                }
+            } catch (\Throwable $e) {}
             
             return response()->json([
                 'success' => true,
@@ -496,6 +621,33 @@ class TaskController extends Controller
                 'task_id' => $task->id, 
                 'assignee_id' => $validated['user_id']
             ]);
+
+            // Emit SSE event for real-time updates
+            try {
+                EventsController::queueEvent('task.updated', [
+                    'boardId' => $task->board_id,
+                    'taskId' => $task->id,
+                    'userId' => Auth::id(),
+                    'timestamp' => now()->toISOString(),
+                ]);
+                // Notify newly assigned user (if not the actor)
+                $actorId = (int) Auth::id();
+                $assigneeId = (int) $validated['user_id'];
+                if ($assigneeId !== $actorId) {
+                    Notification::create([
+                        'user_id' => $assigneeId,
+                        'type' => 'task.assigned',
+                        'data' => [
+                            'task_id' => $task->id,
+                            'board_id' => $task->board_id,
+                            'actor_id' => $actorId,
+                        ],
+                    ]);
+                    EventsController::queueEvent('notification.created', [
+                        'timestamp' => now()->toISOString(),
+                    ]);
+                }
+            } catch (\Throwable $e) {}
             
             return response()->json([
                 'success' => true,
@@ -544,6 +696,16 @@ class TaskController extends Controller
             DB::commit();
             
             Log::info('Task unassigned successfully', ['task_id' => $task->id]);
+
+            // Emit SSE event for real-time updates
+            try {
+                EventsController::queueEvent('task.updated', [
+                    'boardId' => $task->board_id,
+                    'taskId' => $task->id,
+                    'userId' => Auth::id(),
+                    'timestamp' => now()->toISOString(),
+                ]);
+            } catch (\Throwable $e) {}
             
             return response()->json([
                 'success' => true,
@@ -596,6 +758,18 @@ class TaskController extends Controller
                 'original_task_id' => $task->id,
                 'new_task_id' => $newTask->id
             ]);
+
+            // Emit SSE event for real-time updates
+            try {
+                EventsController::queueEvent('task.created', [
+                    'boardId' => $newTask->board_id,
+                    'taskId' => $newTask->id,
+                    'columnId' => $newTask->column_id,
+                    'position' => $newTask->position,
+                    'userId' => Auth::id(),
+                    'timestamp' => now()->toISOString(),
+                ]);
+            } catch (\Throwable $e) {}
             
             return response()->json([
                 'success' => true,

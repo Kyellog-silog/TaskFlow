@@ -11,7 +11,10 @@ use App\Http\Controllers\TaskController;
 use App\Http\Controllers\BoardController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\TeamInvitationController;
+use App\Http\Controllers\EventsController;
 use App\Http\Controllers\CommentController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\ProfileController;
 use App\Models\Task;
 use Illuminate\Support\Facades\Gate;
 
@@ -42,7 +45,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/email/verification-notification', [EmailVerificationNotificationController::class, 'store']);
     });
     
-    // User route
+    // User routes
     Route::get('/user', function (Request $request) {
         return response()->json([
             'success' => true,
@@ -52,11 +55,14 @@ Route::middleware('auth:sanctum')->group(function () {
         ]);
     });
     
+    Route::put('/user/profile', [RegisteredUserController::class, 'updateProfile']);
+    
 
     // Team routes
     Route::apiResource('teams', TeamController::class);
     Route::post('/teams/{team}/members', [TeamController::class, 'addMember']);
     Route::delete('/teams/{team}/members/{user}', [TeamController::class, 'removeMember']);
+    Route::put('/teams/{team}/members/{user}/role', [TeamController::class, 'updateMemberRole']);
     
     // Team invitation routes
     Route::post('/teams/{team}/invite', [TeamInvitationController::class, 'invite']);
@@ -67,6 +73,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('boards', BoardController::class);
     Route::get('/teams/{team}/boards', [BoardController::class, 'byTeam']);
     Route::get('/boards', [BoardController::class, 'index']);
+    Route::get('/boards/{board}/teams', [BoardController::class, 'getTeams']);
+    Route::post('/boards/{board}/teams/{team}', [BoardController::class, 'addTeam']);
+    Route::delete('/boards/{board}/teams/{team}', [BoardController::class, 'removeTeam']);
 
     // Task routes
     Route::apiResource('tasks', TaskController::class);
@@ -89,6 +98,21 @@ Route::middleware('auth:sanctum')->group(function () {
             'data' => $task->activities()->with('user')->latest()->get()
         ]);
     });
+
+    // Server-Sent Events stream (lightweight real-time updates)
+    Route::get('/events/stream', [EventsController::class, 'stream']);
+
+    // Notifications
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
+    Route::post('/notifications/{notification}/read', [NotificationController::class, 'markRead']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+
+    // Profile stats and activity
+    Route::get('/profile/stats', [ProfileController::class, 'stats']);
+    Route::get('/profile/activity', [ProfileController::class, 'activity']);
+    Route::get('/profile/achievements', [ProfileController::class, 'achievements']);
+    Route::post('/profile/avatar', [ProfileController::class, 'uploadAvatar']);
 
     // File upload routes (for future implementation)
     Route::post('/tasks/{task}/attachments', function() {

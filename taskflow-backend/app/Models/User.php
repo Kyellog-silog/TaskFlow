@@ -63,6 +63,10 @@ class User extends Authenticatable
         'password',
         'role',
         'avatar',
+        'bio',
+        'phone',
+        'location',
+        'website',
     ];
 
     protected $hidden = [
@@ -72,7 +76,12 @@ class User extends Authenticatable
 
     protected $casts = [
         'email_verified_at' => 'datetime',
-        'password' => 'hashed',
+    'password' => 'hashed',
+    // Encrypted PII fields
+    'bio' => 'encrypted',
+    'phone' => 'encrypted',
+    'location' => 'encrypted',
+    'website' => 'encrypted',
     ];
 
     public function teams(): BelongsToMany

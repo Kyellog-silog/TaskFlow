@@ -6,14 +6,29 @@ import { Header } from "../components/Header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
 import { Button } from "../components/ui/button"
 import { Badge } from "../components/ui/badge"
-import { Separator } from "../components/ui/separator"
 import { useAuth } from "../contexts/AuthContext"
 import { useToast } from "../hooks/use-toast"
-import { Settings, LogOut, Shield, Bell, Palette, Globe, Lock, User, Sparkles, Moon, Sun, Volume2, Mail, Smartphone, Monitor } from 'lucide-react'
+import { Settings, LogOut, Shield, Bell, User, Sparkles, Volume2, Mail, Monitor } from 'lucide-react'
+import { Switch } from "../components/ui/switch"
+import { storageService } from "../services/storage"
 
 const SettingsPage: React.FC = () => {
   const { user, logout } = useAuth()
   const { toast } = useToast()
+  
+  const [soundEnabled, setSoundEnabled] = useState(storageService.getItem<boolean>('notif_sound_enabled') ?? true)
+  const [emailEnabled, setEmailEnabled] = useState(storageService.getItem<boolean>('notif_email_enabled') ?? true)
+  const [soundVolume, setSoundVolume] = useState<number[]>([storageService.getItem<number>('notif_sound_volume') ?? 70])
+
+  useEffect(()=>{
+    storageService.setItem('notif_sound_enabled', soundEnabled)
+  },[soundEnabled])
+  useEffect(()=>{
+    storageService.setItem('notif_email_enabled', emailEnabled)
+  },[emailEnabled])
+  useEffect(()=>{
+    storageService.setItem('notif_sound_volume', soundVolume[0])
+  },[soundVolume])
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
@@ -117,57 +132,7 @@ const SettingsPage: React.FC = () => {
                   </CardContent>
                 </Card>
 
-                {/* Appearance Settings */}
-                <Card className="bg-white/80 backdrop-blur-sm border-2 border-gray-200 shadow-xl hover:shadow-2xl transition-all duration-500">
-                  <CardHeader>
-                    <CardTitle className="text-2xl font-bold text-gray-800 flex items-center space-x-2">
-                      <Palette className="h-6 w-6 text-purple-500" />
-                      <span>Appearance</span>
-                    </CardTitle>
-                    <CardDescription>Customize how TaskFlow looks and feels</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border-2 border-purple-200">
-                      <div className="flex items-center space-x-4">
-                        <div className="p-2 bg-purple-500 rounded-full">
-                          <Sun className="h-5 w-5 text-white" />
-                        </div>
-                        <div>
-                          <h4 className="font-bold text-gray-800">Theme</h4>
-                          <p className="text-sm text-gray-600">Choose your preferred theme</p>
-                        </div>
-                      </div>
-                      <div className="flex space-x-2">
-                        <Button variant="outline" size="sm" className="bg-white border-purple-200">
-                          <Sun className="h-4 w-4 mr-1" />
-                          Light
-                        </Button>
-                        <Button variant="outline" size="sm" className="border-purple-200">
-                          <Moon className="h-4 w-4 mr-1" />
-                          Dark
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border-2 border-green-200">
-                      <div className="flex items-center space-x-4">
-                        <div className="p-2 bg-green-500 rounded-full">
-                          <Monitor className="h-5 w-5 text-white" />
-                        </div>
-                        <div>
-                          <h4 className="font-bold text-gray-800">Display</h4>
-                          <p className="text-sm text-gray-600">Adjust display preferences</p>
-                        </div>
-                      </div>
-                      <Button
-                        variant="outline"
-                        className="bg-white/50 border-2 border-green-200 text-green-600 hover:bg-green-50"
-                      >
-                        Configure
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
+                {/* Appearance removed for light-only mode */}
 
                 {/* Notifications */}
                 <Card className="bg-white/80 backdrop-blur-sm border-2 border-gray-200 shadow-xl hover:shadow-2xl transition-all duration-500">
@@ -189,20 +154,7 @@ const SettingsPage: React.FC = () => {
                           <p className="text-sm text-gray-600">Receive updates via email</p>
                         </div>
                       </div>
-                      <Badge className="bg-green-100 text-green-700">Enabled</Badge>
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border-2 border-blue-200">
-                      <div className="flex items-center space-x-4">
-                        <div className="p-2 bg-blue-500 rounded-full">
-                          <Smartphone className="h-5 w-5 text-white" />
-                        </div>
-                        <div>
-                          <h4 className="font-bold text-gray-800">Push Notifications</h4>
-                          <p className="text-sm text-gray-600">Get instant updates</p>
-                        </div>
-                      </div>
-                      <Badge className="bg-gray-100 text-gray-700">Disabled</Badge>
+                      <Switch checked={emailEnabled} onCheckedChange={(v:boolean)=>setEmailEnabled(!!v)} />
                     </div>
 
                     <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border-2 border-purple-200">
@@ -213,9 +165,21 @@ const SettingsPage: React.FC = () => {
                         <div>
                           <h4 className="font-bold text-gray-800">Sound Notifications</h4>
                           <p className="text-sm text-gray-600">Play sounds for alerts</p>
+                          <div className="mt-2 flex items-center space-x-3">
+                            <Switch checked={soundEnabled} onCheckedChange={(v:boolean)=>setSoundEnabled(!!v)} />
+                            <div className="w-40">
+                              <input type="range" min={0} max={100} step={1} value={soundVolume[0]} onChange={(e)=>setSoundVolume([Number(e.target.value)])} className="w-full" />
+                            </div>
+                            <Button size="sm" variant="outline" onClick={()=>{
+                              if(!soundEnabled) return
+                              const audio = new Audio('/sounds/notify.mp3')
+                              audio.volume = (soundVolume?.[0] ?? 70)/100
+                              audio.play().catch(()=>{})
+                            }}>Test</Button>
+                          </div>
                         </div>
                       </div>
-                      <Badge className="bg-green-100 text-green-700">Enabled</Badge>
+                      <Badge className="bg-green-100 text-green-700">{soundEnabled? 'Enabled':'Disabled'}</Badge>
                     </div>
                   </CardContent>
                 </Card>

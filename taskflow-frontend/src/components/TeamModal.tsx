@@ -1,9 +1,6 @@
 "use client"
-
-import * as React from "react"
 import { useState, useEffect } from "react"
-import { useMutation, useQueryClient } from "react-query"
-import { Users, Settings, Crown, Mail, Calendar, Target, Sparkles, Send, X, Save, UserPlus, UserMinus, Shield, Trash2, Edit, Eye } from 'lucide-react'
+import { Users, Settings, Crown, Calendar, Target, Sparkles, Send, X, Save, UserMinus, Trash2, Eye } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -11,15 +8,16 @@ import { Textarea } from "./ui/textarea"
 import { Badge } from "./ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
-import { Separator } from "./ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs"
-import { teamsAPI } from "../services/api"
+import { useMutation, useQueryClient } from "react-query"
 import { useToast } from "../hooks/use-toast"
+import { teamsAPI } from "../services/api"
+import { useAuth } from "../contexts/AuthContext"
 
 interface TeamMember {
   id: string
   name: string
-  role: "admin" | "member" | "viewer"
+  role: "viewer" | "member" | "admin"
   avatar: string
   email?: string
   joinedAt?: string
@@ -50,89 +48,68 @@ interface TeamModalProps {
 export function TeamModal({ team, isOpen, onClose, onUpdate }: TeamModalProps) {
   const [editedTeam, setEditedTeam] = useState<Team>(team)
   const [newMemberEmail, setNewMemberEmail] = useState("")
-  const [newMemberRole, setNewMemberRole] = useState("member")
   const [activeTab, setActiveTab] = useState("overview")
-  const { toast } = useToast()
   const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const { user } = useAuth()
 
-  // Update team mutation
-  const updateTeamMutation = useMutation(
-    ({ id, data }: { id: string; data: any }) => teamsAPI.updateTeam(id, data),
-    {
-      onSuccess: () => {
-        toast({ title: "Success", description: "Team updated successfully!" })
-        queryClient.invalidateQueries("teams")
-        onUpdate(editedTeam)
-      },
-      onError: () => {
-        toast({ title: "Error", description: "Failed to update team", variant: "destructive" })
-      }
-    }
-  )
+  // Permissions: owner or admin of this team can manage
+  const isOwner = editedTeam?.owner?.id === user?.id
+  const currentMember = editedTeam?.members?.find((m) => m.id === user?.id)
+  const isAdmin = currentMember?.role === "admin"
+  const canManage = isOwner || isAdmin
 
-  // Invite member mutation
-  const inviteMemberMutation = useMutation(
-    ({ teamId, email, role }: { teamId: string; email: string; role: string }) => 
-      teamsAPI.inviteMember(teamId, email, role),
-    {
-      onSuccess: () => {
-        toast({ title: "Success", description: "Invitation sent successfully! 📧" })
-        setNewMemberEmail("")
-        setNewMemberRole("member")
-        queryClient.invalidateQueries("teams")
-      },
-      onError: () => {
-        toast({ title: "Error", description: "Failed to send invitation", variant: "destructive" })
-      }
-    }
-  )
+  // Update member role mutation
+  const updateMemberRoleMutation = useMutation({
+    mutationFn: ({ teamId, userId, role }: { teamId: string; userId: string; role: string }) =>
+      teamsAPI.updateMemberRole(teamId, userId, role),
+    onSuccess: (data, variables) => {
+      toast({
+        title: "Success",
+        description: "Member role updated successfully",
+      })
 
-  // Remove member mutation
-  const removeMemberMutation = useMutation(
-    ({ teamId, userId }: { teamId: string; userId: string }) => 
-      teamsAPI.removeMember(teamId, userId),
-    {
-      onSuccess: () => {
-        toast({ title: "Success", description: "Member removed successfully" })
-        queryClient.invalidateQueries("teams")
-      },
-      onError: () => {
-        toast({ title: "Error", description: "Failed to remove member", variant: "destructive" })
-      }
-    }
-  )
+  // Aggressive cache invalidation (react-query v3 signatures)
+  queryClient.invalidateQueries(["teams"]) 
+  queryClient.invalidateQueries(["user-teams"]) 
+  queryClient.invalidateQueries(["board-teams"]) 
+
+  // Force refetch
+  queryClient.refetchQueries(["teams"]) 
+
+      // Update the local state immediately
+      setEditedTeam((prev) => ({
+        ...prev,
+        members: prev.members.map((member) =>
+          member.id === variables.userId ? { ...member, role: variables.role as any } : member,
+        ),
+      }))
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update member role",
+        variant: "destructive",
+      })
+    },
+  })
+
+  const handleUpdateMemberRole = (teamId: string, memberId: string, newRole: string) => {
+    if (!canManage) return
+    updateMemberRoleMutation.mutate({
+      teamId,
+      userId: memberId,
+      role: newRole,
+    })
+  }
 
   useEffect(() => {
     setEditedTeam(team)
   }, [team])
 
   const handleSave = () => {
-    updateTeamMutation.mutate({
-      id: editedTeam.id,
-      data: {
-        name: editedTeam.name,
-        description: editedTeam.description
-      }
-    })
-  }
-
-  const handleInviteMember = () => {
-    if (!newMemberEmail.trim()) return
-    
-    inviteMemberMutation.mutate({
-      teamId: team.id,
-      email: newMemberEmail,
-      role: newMemberRole
-    })
-  }
-
-  const handleRemoveMember = (memberId: string) => {
-    if (confirm("Are you sure you want to remove this member from the team?")) {
-      removeMemberMutation.mutate({
-        teamId: team.id,
-        userId: memberId
-      })
-    }
+    onUpdate(editedTeam)
+    onClose()
   }
 
   const getTeamColorConfig = (color?: string) => {
@@ -142,28 +119,28 @@ export function TeamModal({ team, isOpen, onClose, onUpdate }: TeamModalProps) {
           gradient: "from-blue-500 to-cyan-500",
           bg: "from-blue-50 to-cyan-50",
           border: "border-blue-200",
-          text: "text-blue-600"
+          text: "text-blue-600",
         }
       case "purple":
         return {
           gradient: "from-purple-500 to-pink-500",
           bg: "from-purple-50 to-pink-50",
           border: "border-purple-200",
-          text: "text-purple-600"
+          text: "text-purple-600",
         }
       case "green":
         return {
           gradient: "from-green-500 to-emerald-500",
           bg: "from-green-50 to-emerald-50",
           border: "border-green-200",
-          text: "text-green-600"
+          text: "text-green-600",
         }
       default:
         return {
           gradient: "from-gray-500 to-slate-500",
           bg: "from-gray-50 to-slate-50",
           border: "border-gray-200",
-          text: "text-gray-600"
+          text: "text-gray-600",
         }
     }
   }
@@ -175,11 +152,13 @@ export function TeamModal({ team, isOpen, onClose, onUpdate }: TeamModalProps) {
       <DialogContent className="max-w-5xl h-[90vh] flex flex-col bg-gradient-to-br from-white via-blue-50 to-purple-50 border-2 border-blue-200 shadow-2xl">
         {/* Header */}
         <DialogHeader className="pb-0">
-          <div className={`p-4 -m-6 mb-4 bg-gradient-to-r ${colorConfig.bg} border-b-2 ${colorConfig.border} relative overflow-hidden`}>
+          <div
+            className={`p-4 -m-6 mb-4 bg-gradient-to-r ${colorConfig.bg} border-b-2 ${colorConfig.border} relative overflow-hidden`}
+          >
             {/* Background decoration */}
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-16 translate-x-16"></div>
             <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full translate-y-12 -translate-x-12"></div>
-            
+
             <div className="relative z-10">
               <DialogTitle className="flex items-center space-x-3 text-2xl font-bold text-gray-800">
                 <div className="p-2 bg-white/20 rounded-xl">
@@ -194,6 +173,11 @@ export function TeamModal({ team, isOpen, onClose, onUpdate }: TeamModalProps) {
         </DialogHeader>
 
         <div className="flex-1 overflow-hidden">
+          {!canManage && (
+            <div className="mx-6 mb-4 p-3 rounded-lg border-2 border-yellow-200 bg-yellow-50 text-yellow-800 text-sm">
+              View only: you don't have permission to manage this team. Contact an admin or the owner.
+            </div>
+          )}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
             <TabsList className="grid w-full grid-cols-4 bg-white/50 backdrop-blur-sm border border-gray-200">
               <TabsTrigger value="overview" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">
@@ -208,7 +192,10 @@ export function TeamModal({ team, isOpen, onClose, onUpdate }: TeamModalProps) {
                 <Settings className="h-4 w-4 mr-2" />
                 Settings
               </TabsTrigger>
-              <TabsTrigger value="activity" className="data-[state=active]:bg-orange-500 data-[state=active]:text-white">
+              <TabsTrigger
+                value="activity"
+                className="data-[state=active]:bg-orange-500 data-[state=active]:text-white"
+              >
                 <Sparkles className="h-4 w-4 mr-2" />
                 Activity
               </TabsTrigger>
@@ -268,7 +255,10 @@ export function TeamModal({ team, isOpen, onClose, onUpdate }: TeamModalProps) {
                   <h3 className="text-lg font-bold text-gray-800 mb-4">Team Members</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {editedTeam.members.map((member) => (
-                      <div key={member.id} className="flex items-center space-x-3 p-3 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg">
+                      <div
+                        key={member.id}
+                        className="flex items-center space-x-3 p-3 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg"
+                      >
                         <Avatar className="h-12 w-12 ring-2 ring-white shadow-sm">
                           <AvatarImage src={member.avatar || "/placeholder.svg"} />
                           <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-500 text-white font-bold">
@@ -281,15 +271,15 @@ export function TeamModal({ team, isOpen, onClose, onUpdate }: TeamModalProps) {
                         <div className="flex-1">
                           <div className="flex items-center space-x-2">
                             <p className="font-semibold text-gray-900">{member.name}</p>
-                            {member.role === "admin" && (
-                              <Crown className="h-4 w-4 text-yellow-500" />
-                            )}
+                            {member.role === "admin" && <Crown className="h-4 w-4 text-yellow-500" />}
                           </div>
                           <p className="text-sm text-gray-600 capitalize">{member.role}</p>
                         </div>
-                        <Badge 
-                          variant="secondary" 
-                          className={member.role === 'admin' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800'}
+                        <Badge
+                          variant="secondary"
+                          className={
+                            member.role === "admin" ? "bg-yellow-100 text-yellow-800" : "bg-blue-100 text-blue-800"
+                          }
                         >
                           {member.role}
                         </Badge>
@@ -309,8 +299,13 @@ export function TeamModal({ team, isOpen, onClose, onUpdate }: TeamModalProps) {
                       value={newMemberEmail}
                       onChange={(e) => setNewMemberEmail(e.target.value)}
                       className="flex-1 bg-white border-2 border-gray-200 focus:border-blue-500"
+                      disabled={!canManage}
                     />
-                    <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+                    <Button
+                      disabled={!canManage}
+                      className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:opacity-60"
+                      title={!canManage ? "Only admins or the owner can invite members" : undefined}
+                    >
                       <Send className="h-4 w-4 mr-2" />
                       Invite
                     </Button>
@@ -320,7 +315,10 @@ export function TeamModal({ team, isOpen, onClose, onUpdate }: TeamModalProps) {
                 {/* Members List */}
                 <div className="space-y-4">
                   {editedTeam.members.map((member) => (
-                    <div key={member.id} className="bg-white/80 backdrop-blur-sm rounded-xl p-4 border-2 border-gray-200 flex items-center justify-between">
+                    <div
+                      key={member.id}
+                      className="bg-white/80 backdrop-blur-sm rounded-xl p-4 border-2 border-gray-200 flex items-center justify-between"
+                    >
                       <div className="flex items-center space-x-4">
                         <Avatar className="h-12 w-12 ring-2 ring-white shadow-sm">
                           <AvatarImage src={member.avatar || "/placeholder.svg"} />
@@ -334,24 +332,35 @@ export function TeamModal({ team, isOpen, onClose, onUpdate }: TeamModalProps) {
                         <div>
                           <div className="flex items-center space-x-2">
                             <p className="font-semibold text-gray-900">{member.name}</p>
-                            {member.role === "admin" && (
-                              <Crown className="h-4 w-4 text-yellow-500" />
-                            )}
+                            {member.role === "admin" && <Crown className="h-4 w-4 text-yellow-500" />}
                           </div>
-                          <p className="text-sm text-gray-600">{member.email || `${member.name.toLowerCase().replace(' ', '.')}@example.com`}</p>
+                          <p className="text-sm text-gray-600">
+                            {member.email || `${member.name.toLowerCase().replace(" ", ".")}@example.com`}
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <Select value={member.role}>
+                        <Select
+                          value={member.role}
+                          onValueChange={(newRole) => handleUpdateMemberRole(team.id, member.id, newRole)}
+                          disabled={updateMemberRoleMutation.isLoading || !canManage || member.id === editedTeam.owner.id}
+                        >
                           <SelectTrigger className="w-32">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="member">Member</SelectItem>
-                            <SelectItem value="admin">Admin</SelectItem>
+                            <SelectItem value="viewer">👁️ Viewer</SelectItem>
+                            <SelectItem value="member">👤 Member</SelectItem>
+                            <SelectItem value="admin">⚡ Admin</SelectItem>
                           </SelectContent>
                         </Select>
-                        <Button variant="ghost" size="sm" className="text-red-600 hover:bg-red-50">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:bg-red-50"
+                          disabled={!canManage || member.id === editedTeam.owner.id}
+                          title={!canManage ? "Only admins or the owner can remove members" : member.id === editedTeam.owner.id ? "Owner cannot be removed" : undefined}
+                        >
                           <UserMinus className="h-4 w-4" />
                         </Button>
                       </div>
@@ -366,7 +375,15 @@ export function TeamModal({ team, isOpen, onClose, onUpdate }: TeamModalProps) {
                   <div className="bg-white/80 backdrop-blur-sm rounded-xl p-6 border-2 border-gray-200">
                     <h3 className="text-lg font-bold text-gray-800 mb-4">Team Information</h3>
                     <div className="space-y-4">
- 
+                      <div>
+                        <label className="text-sm font-bold text-gray-800 mb-2 block">Team Name</label>
+                        <Input
+                          value={editedTeam.name}
+                          onChange={(e) => setEditedTeam({ ...editedTeam, name: e.target.value })}
+                          className="bg-white border-2 border-gray-200 focus:border-blue-500"
+                          disabled={!canManage}
+                        />
+                      </div>
                       <div>
                         <label className="text-sm font-bold text-gray-800 mb-2 block">Description</label>
                         <Textarea
@@ -374,13 +391,15 @@ export function TeamModal({ team, isOpen, onClose, onUpdate }: TeamModalProps) {
                           onChange={(e) => setEditedTeam({ ...editedTeam, description: e.target.value })}
                           rows={3}
                           className="bg-white border-2 border-gray-200 focus:border-blue-500"
+                          disabled={!canManage}
                         />
                       </div>
                       <div>
                         <label className="text-sm font-bold text-gray-800 mb-2 block">Team Color</label>
-                        <Select 
-                          value={editedTeam.color} 
+                        <Select
+                          value={editedTeam.color}
                           onValueChange={(value) => setEditedTeam({ ...editedTeam, color: value })}
+                          disabled={!canManage}
                         >
                           <SelectTrigger className="bg-white border-2 border-gray-200">
                             <SelectValue />
@@ -396,6 +415,7 @@ export function TeamModal({ team, isOpen, onClose, onUpdate }: TeamModalProps) {
                   </div>
 
                   {/* Danger Zone */}
+                  {isOwner && (
                   <div className="bg-gradient-to-r from-red-50 to-pink-50 rounded-xl p-6 border-2 border-red-200">
                     <h3 className="text-lg font-bold text-red-800 mb-4">Danger Zone</h3>
                     <div className="space-y-3">
@@ -408,40 +428,21 @@ export function TeamModal({ team, isOpen, onClose, onUpdate }: TeamModalProps) {
                       </Button>
                     </div>
                   </div>
+                  )}
                 </div>
               </TabsContent>
 
               <TabsContent value="activity" className="space-y-6 mt-0">
                 <div className="bg-white/80 backdrop-blur-sm rounded-xl p-6 border-2 border-gray-200">
                   <h3 className="text-lg font-bold text-gray-800 mb-4">Recent Activity</h3>
-                  <div className="space-y-4">
-                    <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg">
-                      <div className="p-2 bg-blue-500 rounded-full">
-                        <UserPlus className="h-4 w-4 text-white" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Alice Johnson joined the team</p>
-                        <p className="text-xs text-gray-500">2 hours ago</p>
-                      </div>
+                  <div className="text-center py-12">
+                    <div className="p-4 bg-gray-100 rounded-full w-16 h-16 mx-auto mb-4">
+                      <Sparkles className="h-8 w-8 text-gray-400 mx-auto" />
                     </div>
-                    <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg">
-                      <div className="p-2 bg-green-500 rounded-full">
-                        <Target className="h-4 w-4 text-white" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">New board "Project Alpha" created</p>
-                        <p className="text-xs text-gray-500">1 day ago</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg">
-                      <div className="p-2 bg-purple-500 rounded-full">
-                        <Settings className="h-4 w-4 text-white" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Team settings updated</p>
-                        <p className="text-xs text-gray-500">3 days ago</p>
-                      </div>
-                    </div>
+                    <p className="text-gray-500 text-lg font-medium mb-2">No recent activity</p>
+                    <p className="text-gray-400 text-sm">
+                      Team activity will appear here when members interact with boards and tasks.
+                    </p>
                   </div>
                 </div>
               </TabsContent>
@@ -450,18 +451,20 @@ export function TeamModal({ team, isOpen, onClose, onUpdate }: TeamModalProps) {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 bg-white/80 backdrop-blur-sm">
-          <Button 
-            variant="outline" 
+    <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 bg-white/80 backdrop-blur-sm">
+          <Button
+            variant="outline"
             onClick={onClose}
             className="bg-white border-2 border-gray-300 text-gray-700 hover:bg-gray-50"
           >
             <X className="h-4 w-4 mr-2" />
             Close
           </Button>
-          <Button 
+          <Button
             onClick={handleSave}
-            className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+      disabled={!canManage}
+      title={!canManage ? "No changes allowed. You are in view-only mode." : undefined}
+      className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 disabled:opacity-60"
           >
             <Save className="h-4 w-4 mr-2" />
             Save Changes

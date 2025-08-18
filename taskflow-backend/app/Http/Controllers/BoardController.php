@@ -10,6 +10,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Http\Controllers\EventsController;
+use Illuminate\Support\Facades\Auth;
 
 class BoardController extends Controller
 {
@@ -158,7 +160,7 @@ class BoardController extends Controller
         }
     }
 
-    public function show(Board $board): JsonResponse
+    public function show(Board $board, Request $request): JsonResponse
     {
         try {
             Gate::authorize('view', $board);
@@ -190,11 +192,26 @@ class BoardController extends Controller
                 ]);
             }
             
+            // Compute effective permissions for the current user (backend source of truth)
+            $user = $request->user();
+            $permissions = [
+                'effective_role'   => $board->getUserRole($user),
+                'user_role'        => $board->getUserRole($user), // alias
+                'can_view_board'   => $board->canUserAccess($user),
+                'can_edit_tasks'   => $board->canUserEditTasks($user),
+                'can_create_tasks' => $board->canUserCreateTasks($user),
+                'can_delete_tasks' => $board->canUserEditTasks($user), // same as edit for now
+                'can_manage_board' => $board->canUserManage($user),
+                'is_viewer'        => $board->isUserViewer($user),
+            ];
+
             Log::info('Board loaded successfully', ['board_id' => $board->id]);
             
             return response()->json([
                 'success' => true,
-                'data' => $board
+                'data' => array_merge($board->toArray(), [
+                    'permissions' => $permissions,
+                ])
             ]);
         } catch (\Exception $e) {
             Log::error('Error fetching board', [
@@ -250,6 +267,14 @@ class BoardController extends Controller
             Log::info('Deleting board', ['board_id' => $board->id]);
             $board->delete(); // This will soft delete
             Log::info('Board deleted successfully', ['board_id' => $board->id]);
+            // Emit SSE to update dashboards and lists
+            try {
+                EventsController::queueEvent('board.deleted', [
+                    'boardId' => $board->id,
+                    'userId' => Auth::id(),
+                    'timestamp' => now()->toISOString(),
+                ]);
+            } catch (\Throwable $e) {}
             
             return response()->json([
                 'success' => true,
@@ -277,6 +302,14 @@ class BoardController extends Controller
             Log::info('Archiving board', ['board_id' => $board->id]);
             $board->archive();
             Log::info('Board archived successfully', ['board_id' => $board->id]);
+            // Emit SSE to update dashboards and lists
+            try {
+                EventsController::queueEvent('board.archived', [
+                    'boardId' => $board->id,
+                    'userId' => Auth::id(),
+                    'timestamp' => now()->toISOString(),
+                ]);
+            } catch (\Throwable $e) {}
             
             return response()->json([
                 'success' => true,
@@ -305,6 +338,14 @@ class BoardController extends Controller
             Log::info('Unarchiving board', ['board_id' => $board->id]);
             $board->unarchive();
             Log::info('Board unarchived successfully', ['board_id' => $board->id]);
+            // Emit SSE to update dashboards and lists
+            try {
+                EventsController::queueEvent('board.unarchived', [
+                    'boardId' => $board->id,
+                    'userId' => Auth::id(),
+                    'timestamp' => now()->toISOString(),
+                ]);
+            } catch (\Throwable $e) {}
             
             return response()->json([
                 'success' => true,
@@ -334,6 +375,14 @@ class BoardController extends Controller
             Log::info('Restoring board', ['board_id' => $board->id]);
             $board->restore();
             Log::info('Board restored successfully', ['board_id' => $board->id]);
+            // Emit SSE to update dashboards and lists
+            try {
+                EventsController::queueEvent('board.restored', [
+                    'boardId' => $board->id,
+                    'userId' => Auth::id(),
+                    'timestamp' => now()->toISOString(),
+                ]);
+            } catch (\Throwable $e) {}
             
             return response()->json([
                 'success' => true,
@@ -384,6 +433,134 @@ class BoardController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch team boards: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get teams that have access to a board
+     */
+    public function getTeams(Request $request, Board $board): JsonResponse
+    {
+        try {
+            Gate::authorize('view', $board);
+            
+            // If board has a team, return that team
+            $teams = [];
+            if ($board->team) {
+                $teams = [$board->team->load('owner', 'members')];
+            }
+            
+            Log::info('Board teams fetched', [
+                'board_id' => $board->id,
+                'teams_count' => count($teams)
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'data' => $teams
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error fetching board teams', [
+                'board_id' => $board->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch board teams: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Add a team to a board
+     */
+    public function addTeam(Request $request, Board $board, Team $team): JsonResponse
+    {
+        try {
+            Gate::authorize('update', $board);
+            Gate::authorize('view', $team);
+            
+            // Check if the board already belongs to the team
+            if ($board->team_id === $team->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Board already belongs to this team'
+                ], 400);
+            }
+            
+            // Update the board's team
+            $board->update(['team_id' => $team->id]);
+            
+            Log::info('Team added to board', [
+                'board_id' => $board->id,
+                'team_id' => $team->id,
+                'user_id' => $request->user()->id
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'data' => $board->fresh(['team', 'createdBy']),
+                'message' => 'Team added to board successfully'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error adding team to board', [
+                'board_id' => $board->id,
+                'team_id' => $team->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to add team to board: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Remove a team from a board
+     */
+    public function removeTeam(Request $request, Board $board, Team $team): JsonResponse
+    {
+        try {
+            Gate::authorize('update', $board);
+            
+            // Check if the board belongs to this team
+            if ($board->team_id !== $team->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Board does not belong to this team'
+                ], 400);
+            }
+            
+            // Remove the team from the board (make it personal)
+            $board->update(['team_id' => null]);
+            
+            Log::info('Team removed from board', [
+                'board_id' => $board->id,
+                'team_id' => $team->id,
+                'user_id' => $request->user()->id
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'data' => $board->fresh(['team', 'createdBy']),
+                'message' => 'Team removed from board successfully'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error removing team from board', [
+                'board_id' => $board->id,
+                'team_id' => $team->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to remove team from board: ' . $e->getMessage()
             ], 500);
         }
     }

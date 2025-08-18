@@ -13,6 +13,8 @@ import { ErrorBoundary } from "./components/ErrorBoundary"
 import { useAuth } from "./contexts/AuthContext"
 import { useToast } from "./hooks/use-toast"
 import { setGlobalToast } from "./services/api"
+import SSEClient from "./services/sse"
+import { API_BASE_URL } from "./services/api"
 
 // Pages
 import LoginPage from "./pages/LoginPage"
@@ -57,6 +59,100 @@ function App() {
   React.useEffect(() => {
     setGlobalToast(toastHandler)
   }, [toastHandler])
+
+  // Bridge component to keep a single SSE connection while authenticated
+  const SSEBridge: React.FC = () => {
+    const { user } = useAuth()
+    React.useEffect(() => {
+      if (!user) return
+  const base = API_BASE_URL.replace(/\/$/, "")
+  // If base already contains /api, don't double it
+  const sseUrl = base.match(/\/api\/?$/) ? `${base}/events/stream` : `${base}/api/events/stream`
+  const sse = new SSEClient(sseUrl)
+      sse.connect({
+        // Teams
+        'team.updated': () => {
+          // Invalidate team-related caches across the app
+          queryClient.invalidateQueries(["teams"]) // Teams list
+          queryClient.invalidateQueries(["user-teams", user.id])
+          // IMPORTANT: use string key for partial match to invalidate all ["board-teams", boardId] queries
+          queryClient.invalidateQueries('board-teams')
+          // Optional eager refetch to reduce window of staleness
+          queryClient.refetchQueries('board-teams', { exact: false })
+          // Also refresh board data to update server-calculated permissions immediately
+          queryClient.invalidateQueries('board')
+          queryClient.refetchQueries('board', { exact: false })
+        },
+        // Boards lifecycle affecting visibility of tasks in counts
+        'board.archived': () => {
+          queryClient.invalidateQueries(["tasks", "due-today"]) 
+          queryClient.invalidateQueries(["tasks", "due-soon"]) 
+          queryClient.invalidateQueries(["boards"]) // lists/cards
+        },
+        'board.deleted': () => {
+          queryClient.invalidateQueries(["tasks", "due-today"]) 
+          queryClient.invalidateQueries(["tasks", "due-soon"]) 
+          queryClient.invalidateQueries(["boards"]) 
+        },
+        'board.unarchived': () => {
+          queryClient.invalidateQueries(["tasks", "due-today"]) 
+          queryClient.invalidateQueries(["tasks", "due-soon"]) 
+          queryClient.invalidateQueries(["boards"]) 
+        },
+        'board.restored': () => {
+          queryClient.invalidateQueries(["tasks", "due-today"]) 
+          queryClient.invalidateQueries(["tasks", "due-soon"]) 
+          queryClient.invalidateQueries(["boards"]) 
+        },
+        // Tasks lifecycle
+        'task.created': (d: any) => {
+          if (d?.boardId) queryClient.invalidateQueries(["tasks", d.boardId])
+          // Update global due counters
+          queryClient.invalidateQueries(["tasks", "due-today"]) 
+          queryClient.invalidateQueries(["tasks", "due-soon"]) 
+        },
+        'task.updated': (d: any) => {
+          if (d?.boardId) queryClient.invalidateQueries(["tasks", d.boardId])
+          queryClient.invalidateQueries(["tasks", "due-today"]) 
+          queryClient.invalidateQueries(["tasks", "due-soon"]) 
+        },
+        'task.moved': (d: any) => {
+          if (d?.boardId) queryClient.invalidateQueries(["tasks", d.boardId])
+          queryClient.invalidateQueries(["tasks", "due-today"]) 
+          queryClient.invalidateQueries(["tasks", "due-soon"]) 
+        },
+        'task.deleted': (d: any) => {
+          if (d?.boardId) queryClient.invalidateQueries(["tasks", d.boardId])
+          queryClient.invalidateQueries(["tasks", "due-today"]) 
+          queryClient.invalidateQueries(["tasks", "due-soon"]) 
+        },
+        // Comments
+        'comment.created': (d: any) => {
+          if (d?.taskId) queryClient.invalidateQueries(["comments", String(d.taskId)])
+        },
+        'comment.deleted': (d: any) => {
+          if (d?.taskId) queryClient.invalidateQueries(["comments", String(d.taskId)])
+        },
+        // Notifications
+        'notification.created': () => {
+          queryClient.invalidateQueries(['notifications', 'unread-count'])
+          queryClient.invalidateQueries(['notifications', 'list'])
+          // Fire-and-forget sound respecting user settings
+          try {
+            const enabled = (window as any).localStorage ? JSON.parse(localStorage.getItem('notif_sound_enabled') || 'true') : true
+            const vol = (window as any).localStorage ? (JSON.parse(localStorage.getItem('notif_sound_volume') || '70')/100) : 0.7
+            if (enabled) {
+              const audio = new Audio('/sounds/notify.mp3')
+              audio.volume = vol
+              audio.play().catch(()=>{})
+            }
+          } catch {}
+        },
+      })
+      return () => sse.close()
+    }, [user])
+    return null
+  }
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
@@ -64,6 +160,8 @@ function App() {
           <AuthProvider>
             <Router>
               <div className="App min-h-screen bg-background text-foreground">
+                {/* Global SSE bridge for real-time cache invalidation */}
+                <SSEBridge />
                 <Routes>
                   {/* Public Routes */}
                   <Route

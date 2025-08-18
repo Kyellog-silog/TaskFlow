@@ -185,6 +185,50 @@ class TeamController extends Controller
         ]);
     }
 
+    public function updateMemberRole(Request $request, Team $team, User $user): JsonResponse
+    {
+        Gate::authorize('manage', $team);
+
+        $validated = $request->validate([
+            'role' => 'required|in:admin,member,viewer'
+        ]);
+
+        if ($team->isOwner($user)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot change owner role'
+            ], 400);
+        }
+
+        if (!$team->isMember($user)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User is not a member of this team'
+            ], 400);
+        }
+
+        // Update the member's role in the pivot table
+        $team->members()->updateExistingPivot($user->id, ['role' => $validated['role']]);
+
+        // Notify via SSE so other sessions can refresh
+        try {
+            \App\Http\Controllers\EventsController::queueEvent('team.updated', [
+                'teamId' => $team->id,
+                'userId' => $user->id,
+                'role' => $validated['role'],
+                'timestamp' => now()->timestamp,
+            ]);
+        } catch (\Throwable $e) {
+            // Don't fail the request if SSE queueing fails
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Member role updated successfully',
+            'data' => $team->fresh(['members'])
+        ]);
+    }
+
     public function getTeamBoards(Team $team): JsonResponse
     {
         Gate::authorize('view', $team);

@@ -50,13 +50,10 @@
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
+  * { border-color: hsl(var(--border)); }
+  body { background-color: hsl(var(--background)); color: hsl(var(--foreground)); }
 }
+/* Removed dark mode utility helpers (light-only mode) */
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {

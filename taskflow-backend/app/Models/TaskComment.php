@@ -20,6 +20,7 @@ class TaskComment extends Model
         'task_id',
         'user_id',
         'content',
+        'parent_id',
     ];
 
     /**
@@ -44,6 +45,22 @@ class TaskComment extends Model
     public function task(): BelongsTo
     {
         return $this->belongsTo(Task::class);
+    }
+
+    /**
+     * Parent comment (for replies)
+     */
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(TaskComment::class, 'parent_id');
+    }
+
+    /**
+     * Replies to this comment
+     */
+    public function replies()
+    {
+        return $this->hasMany(TaskComment::class, 'parent_id')->with('user');
     }
 
     /**

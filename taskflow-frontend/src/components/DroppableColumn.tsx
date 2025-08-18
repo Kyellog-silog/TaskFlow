@@ -25,6 +25,7 @@ interface DroppableColumnProps {
     reason?: string
   }
   userRole?: "admin" | "member"
+  canCreate?: boolean
   onCreateTask: () => void
 }
 
@@ -33,6 +34,7 @@ export function DroppableColumn({
   children,
   dragConstraints = { allowedColumns: [], blockedColumns: [] },
   userRole = "member",
+  canCreate = true,
   onCreateTask,
 }: DroppableColumnProps) {
   const { isOver, setNodeRef, active } = useDroppable({
@@ -242,10 +244,10 @@ export function DroppableColumn({
               : "hover:shadow-lg hover:scale-105"
           }`}
           onClick={onCreateTask}
-          disabled={!!isAtCapacity}
+          disabled={!!isAtCapacity || !canCreate}
         >
           <Plus className="h-5 w-5 mr-2 group-hover:rotate-90 transition-transform duration-300" />
-          <span className="font-semibold">{isAtCapacity ? "Column Full" : "Add a task"}</span>
+          <span className="font-semibold">{isAtCapacity ? "Column Full" : (!canCreate ? "View-only" : "Add a task")}</span>
         </Button>
       </div>
     </div>

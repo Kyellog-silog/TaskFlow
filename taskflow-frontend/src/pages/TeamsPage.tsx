@@ -47,7 +47,17 @@ const TeamsPage = () => {
   const [newTeam, setNewTeam] = useState({ name: "", description: "" })
 
   // Fetch teams
-  const { data: teams, isLoading } = useQuery("teams", teamsAPI.getTeams)
+  const { data: teams, isLoading } = useQuery(
+    "teams",
+    teamsAPI.getTeams,
+    {
+      // Make team membership changes propagate faster across tabs/sessions
+      staleTime: 10 * 1000, // 10s
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchInterval: 30 * 1000, // poll every 30s to catch remote updates
+    }
+  )
 
   // Create team mutation
   const createTeamMutation = useMutation(teamsAPI.createTeam, {
@@ -335,6 +345,8 @@ const TeamsPage = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {actualTeams.map((team: any) => {
                 const colorConfig = getTeamColorConfig(team.color)
+                const userMember = (team.members || []).find((m: any) => m.id === user?.id)
+                const canManage = team.owner?.id === user?.id || userMember?.role === "admin"
                 return (
                   <Card
                     key={team.id}
@@ -374,6 +386,8 @@ const TeamsPage = () => {
                               e.stopPropagation()
                               setSelectedTeam(team)
                             }}
+                            disabled={!canManage}
+                            title={!canManage ? "View-only: you can't manage this team" : undefined}
                           >
                             <Settings className="h-4 w-4" />
                           </Button>
@@ -407,6 +421,8 @@ const TeamsPage = () => {
                                 e.stopPropagation()
                                 handleInviteMember(team.id)
                               }}
+                              disabled={!canManage}
+                              title={!canManage ? "Only admins or the owner can invite" : undefined}
                             >
                               <UserPlus className="h-3 w-3 mr-1" />
                               Invite
@@ -477,6 +493,7 @@ const TeamsPage = () => {
                               e.stopPropagation()
                               setSelectedTeam(team)
                             }}
+                            title={!canManage ? "Open to view; changes disabled" : undefined}
                           >
                             <Edit className="h-4 w-4 mr-1" />
                             Manage

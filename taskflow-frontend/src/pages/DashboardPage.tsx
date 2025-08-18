@@ -11,7 +11,7 @@ import { Button } from "../components/ui/button"
 import { Badge } from "../components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "../components/ui/dropdown-menu"
-import { boardsAPI } from "../services/api"
+import { boardsAPI, tasksAPI } from "../services/api"
 import { useToast } from "../hooks/use-toast"
 import { useAuth } from "../contexts/AuthContext"
 import { Calendar, Users, CheckSquare, Clock, MoreVertical, Folder, RefreshCw, Sparkles, Target, Edit, Trash2, Copy, ExternalLink, TrendingUp, Activity, Eye, Archive } from 'lucide-react'
@@ -87,6 +87,24 @@ const DashboardPage = () => {
       refetchOnMount: true,
       staleTime: 0,
     },
+  )
+
+  // Dashboard due counters
+  const { data: dueTodayData, isLoading: dueTodayLoading } = useQuery(
+    ["tasks", "due-today", { uncompleted: true }],
+    async () => {
+      const res = await tasksAPI.getDueTodayCount()
+      return res
+    },
+    { staleTime: 60 * 1000, refetchOnWindowFocus: true }
+  )
+  const { data: dueSoonData, isLoading: dueSoonLoading } = useQuery(
+    ["tasks", "due-soon", { days: 3, uncompleted: true }],
+    async () => {
+      const res = await tasksAPI.getDueSoonCount(3)
+      return res
+    },
+    { staleTime: 60 * 1000, refetchOnWindowFocus: true }
   )
 
   // Delete board mutation
@@ -291,7 +309,9 @@ const DashboardPage = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-orange-100 text-sm font-medium">Due Today</p>
-                    <p className="text-3xl font-bold">3</p>
+                    <p className="text-3xl font-bold">
+                      {dueTodayLoading ? '…' : (dueTodayData?.data?.count ?? 0)}
+                    </p>
                     <p className="text-orange-200 text-xs mt-1">
                       <Clock className="h-3 w-3 inline mr-1" />
                       Need attention
@@ -300,6 +320,12 @@ const DashboardPage = () => {
                   <div className="p-3 bg-white/20 rounded-xl">
                     <Clock className="h-8 w-8 text-white" />
                   </div>
+                </div>
+                {/* Due soon helper */}
+                <div className="mt-4 text-xs text-orange-100/90 flex items-center gap-2">
+                  <span className="px-2 py-1 rounded-full bg-white/10 border border-white/20">
+                    Due in next 3 days: {dueSoonLoading ? '…' : (dueSoonData?.data?.count ?? 0)}
+                  </span>
                 </div>
               </CardContent>
             </Card>

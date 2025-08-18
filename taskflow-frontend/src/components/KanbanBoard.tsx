@@ -21,6 +21,7 @@ import { DroppableColumn } from "./DroppableColumn"
 import { SortableTaskCard } from "./SortableTaskCard"
 import { TaskCard } from "./TaskCard"
 import { CreateTaskModal } from "./CreateTaskModal"
+import type { TeamPermissions } from "../hooks/useTeamPermissions"
 import { TaskModal } from "./TaskModal"
 
 export interface Task {
@@ -58,6 +59,7 @@ interface KanbanBoardProps {
   onTaskDelete: (taskId: string) => void
   onTaskMoveFromModal?: (taskId: string, newStatus: string) => void
   userRole?: "admin" | "member"
+  teamPermissions?: TeamPermissions
 }
 
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({
@@ -68,6 +70,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   onTaskDelete,
   onTaskMoveFromModal,
   userRole = "member",
+  teamPermissions,
 }) => {
   const [activeTask, setActiveTask] = useState<Task | null>(null)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
@@ -94,6 +97,11 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
+    // Block moves for users without edit rights
+    if (teamPermissions && !teamPermissions.canEditTasks) {
+      setActiveTask(null)
+      return
+    }
     const { active, over } = event
     setActiveTask(null)
 
@@ -260,6 +268,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 column={column}
                 dragConstraints={activeTask ? getDragConstraints(activeTask) : { allowedColumns: [], blockedColumns: [] }}
                 userRole={userRole}
+                canCreate={teamPermissions ? teamPermissions.canCreateTasks : true}
                 onCreateTask={() => setCreateTaskColumn(column.id)}
               >
                 {column.tasks.map((task) => (

@@ -7,6 +7,7 @@ export interface User {
     phone?: string
     location?: string
     bio?: string
+    website?: string
     emailVerifiedAt?: string
     createdAt: string
     updatedAt: string
@@ -27,7 +28,7 @@ export interface User {
     team?: Team
   }
   
-  export type TeamRole = "admin" | "member"
+  export type TeamRole = "admin" | "member" | "viewer"
   
   export interface Team {
     id: string
