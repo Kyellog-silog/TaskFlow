@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { useAuth } from "../contexts/AuthContext"
 import { useToast } from "../hooks/use-toast"
 import { Eye, EyeOff, LogIn, Sparkles, ArrowRight, Shield, Zap } from "lucide-react"
+import logger from "../lib/logger"
 
 const LoginPage = () => {
   const [email, setEmail] = useState("")
@@ -22,7 +23,7 @@ const LoginPage = () => {
   useEffect(() => {
     setMounted(true)
     if (user) {
-      console.log("User found, redirecting to dashboard:", user)
+      logger.log("User found, redirecting to dashboard:", user)
       navigate("/dashboard", { replace: true })
     }
   }, [user, navigate])
@@ -32,7 +33,7 @@ const LoginPage = () => {
     setIsLoading(true)
 
     try {
-      console.log("Attempting login...")
+  logger.log("Attempting login...")
       await login(email, password)
 
       toast({
@@ -44,7 +45,7 @@ const LoginPage = () => {
         navigate("/dashboard", { replace: true })
       }, 100)
     } catch (error: any) {
-      console.error("Login failed:", error)
+      logger.error("Login failed:", error)
       toast({
         title: "Sign in failed",
         description: error.response?.data?.message || error.message || "Please check your credentials",

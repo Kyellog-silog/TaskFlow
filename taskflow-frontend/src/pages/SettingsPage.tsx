@@ -11,6 +11,7 @@ import { useToast } from "../hooks/use-toast"
 import { Settings, LogOut, Shield, Bell, User, Sparkles, Volume2, Mail, Monitor } from 'lucide-react'
 import { Switch } from "../components/ui/switch"
 import { storageService } from "../services/storage"
+import logger from "../lib/logger"
 
 const SettingsPage: React.FC = () => {
   const { user, logout } = useAuth()
@@ -43,7 +44,7 @@ const SettingsPage: React.FC = () => {
         description: "See you next time!",
       })
     } catch (error) {
-      console.error("Failed to log out", error)
+      logger.error("Failed to log out", error)
       toast({
         title: "Error",
         description: "Failed to log out. Please try again.",

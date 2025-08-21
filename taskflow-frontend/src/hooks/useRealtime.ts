@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react"
 import { useQueryClient } from "react-query"
+  import logger from "../lib/logger"
 
 interface UseRealtimeOptions {
   boardId?: string
@@ -21,7 +22,7 @@ export const useRealtime = ({ boardId, onTaskUpdate, onTaskMove }: UseRealtimeOp
     wsRef.current = ws
 
     ws.onopen = () => {
-      console.log("WebSocket connected")
+      logger.log("WebSocket connected")
     }
 
     ws.onmessage = (event) => {
@@ -30,23 +31,39 @@ export const useRealtime = ({ boardId, onTaskUpdate, onTaskMove }: UseRealtimeOp
       switch (data.type) {
         case "task_updated":
           onTaskUpdate?.(data.task)
-          queryClient.invalidateQueries(["tasks", boardId])
+          // Update specific task instead of invalidating entire query
+          queryClient.setQueryData(["tasks", boardId], (oldData: any) => {
+            if (!oldData?.data) return oldData
+            const updatedTasks = oldData.data.map((task: any) => 
+              task.id === data.task.id ? { ...task, ...data.task } : task
+            )
+            return { ...oldData, data: updatedTasks }
+          })
           break
         case "task_moved":
           onTaskMove?.(data)
-          queryClient.invalidateQueries(["tasks", boardId])
+          // Similar specific update for task moves
+          queryClient.setQueryData(["tasks", boardId], (oldData: any) => {
+            if (!oldData?.data) return oldData
+            const updatedTasks = oldData.data.map((task: any) => 
+              task.id === data.taskId 
+                ? { ...task, column_id: data.toColumn, position: data.position }
+                : task
+            )
+            return { ...oldData, data: updatedTasks }
+          })
           break
         default:
-          console.log("Unknown message type:", data.type)
+          logger.log("Unknown message type:", data.type)
       }
     }
 
     ws.onclose = () => {
-      console.log("WebSocket disconnected")
+      logger.log("WebSocket disconnected")
     }
 
     ws.onerror = (error) => {
-      console.error("WebSocket error:", error)
+      logger.error("WebSocket error:", error)
     }
 
     return () => {

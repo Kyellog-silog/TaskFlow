@@ -23,6 +23,7 @@ import { TaskCard } from "./TaskCard"
 import { CreateTaskModal } from "./CreateTaskModal"
 import type { TeamPermissions } from "../hooks/useTeamPermissions"
 import { TaskModal } from "./TaskModal"
+import logger from "../lib/logger"
 
 export interface Task {
   id: string
@@ -129,13 +130,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
     // Check column acceptance rules
     if (destColumn.acceptsFrom && !destColumn.acceptsFrom.includes(sourceColumn.id)) {
-      console.log("Destination column doesn't accept from source column")
+  logger.log("Destination column doesn't accept from source column")
       return
     }
 
     // Check capacity
     if (destColumn.maxTasks && destColumn.tasks.length >= destColumn.maxTasks) {
-      console.log("Destination column is at capacity")
+  logger.log("Destination column is at capacity")
       return
     }
 
@@ -196,7 +197,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   }
 
   const handleTaskMoveFromModal = (taskId: string, newStatus: string) => {
-    console.log(`Task status change requested: ${taskId} -> ${newStatus}`)
+  logger.log(`Task status change requested: ${taskId} -> ${newStatus}`)
     
     // Map frontend status to column title
     const statusToTitleMap: Record<string, string> = {
@@ -208,11 +209,11 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     
     const targetColumnTitle = statusToTitleMap[newStatus]
     if (!targetColumnTitle) {
-      console.error('Unknown status:', newStatus)
+  logger.error('Unknown status:', newStatus)
       return
     }
     
-    console.log(`Looking for column with title: ${targetColumnTitle}`)
+  logger.log(`Looking for column with title: ${targetColumnTitle}`)
     
     // Find current column of the task
     const currentColumn = columns.find(col => 
@@ -220,7 +221,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     )
     
     if (!currentColumn) {
-      console.error('Current column not found for task:', taskId)
+  logger.error('Current column not found for task:', taskId)
       return
     }
     
@@ -228,13 +229,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     const targetColumn = columns.find(col => col.title === targetColumnTitle)
     
     if (!targetColumn) {
-      console.error('Target column not found for title:', targetColumnTitle, 'Available columns:', columns.map(c => ({ id: c.id, title: c.title })))
+  logger.error('Target column not found for title:', targetColumnTitle, 'Available columns:', columns.map(c => ({ id: c.id, title: c.title })))
       return
     }
     
     // Don't move if already in correct column
     if (currentColumn.id === targetColumn.id) {
-      console.log('Task already in correct column')
+  logger.log('Task already in correct column')
       return
     }
     
@@ -277,7 +278,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                     task={task}
                     onEdit={() => setSelectedTask(task)}
                     onDelete={() => {
-                      console.log('Delete task:', task.id)
+                      logger.log('Delete task:', task.id)
                       onTaskDelete(task.id)
                     }}
                     dragConstraints={getDragConstraints(task)}

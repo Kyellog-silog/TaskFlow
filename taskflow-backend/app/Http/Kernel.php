@@ -14,5 +14,7 @@ protected $middlewareGroups = [
         'throttle:api',
         \Illuminate\Routing\Middleware\SubstituteBindings::class,
         \App\Http\Middleware\Cors::class,
+    // Add conditional caching for idempotent responses (ETag/If-None-Match)
+    \App\Http\Middleware\ETagMiddleware::class,
     ],
 ];

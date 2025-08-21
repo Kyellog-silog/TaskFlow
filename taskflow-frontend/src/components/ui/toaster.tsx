@@ -5,12 +5,16 @@ import { useToast } from "../../hooks/use-toast"
 import { Toast, ToastClose, ToastDescription, ToastProvider, ToastTitle, ToastViewport } from "./toast"
 
 export function Toaster() {
-  const { toasts } = useToast()
+  const { toasts, removeToast } = useToast()
 
   return (
     <ToastProvider>
       {toasts.map((toast: any) => (
-        <Toast key={toast.id} {...toast}>
+        <Toast key={toast.id} variant={toast.variant} onOpenChange={(open) => {
+          if (!open) {
+            removeToast(toast.id)
+          }
+        }}>
           <div className="grid gap-1">
             {toast.title && <ToastTitle>{toast.title}</ToastTitle>}
             {toast.description && <ToastDescription>{toast.description}</ToastDescription>}

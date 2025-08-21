@@ -346,7 +346,7 @@ export const Header: React.FC = () => {
                     className="relative h-8 w-8 rounded-full hover:ring-2 hover:ring-blue-200 transition-all"
                   >
                     <Avatar className="h-8 w-8 ring-2 ring-white shadow-sm">
-                      <AvatarImage src={user?.avatar || "/placeholder.svg?height=32&width=32"} alt={user?.name} />
+                      <AvatarImage src={user?.avatar || "/placeholder.svg"} alt={user?.name} />
                       <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-500 text-white font-bold">
                         {user?.name ? getInitials(user.name) : "U"}
                       </AvatarFallback>
@@ -362,7 +362,7 @@ export const Header: React.FC = () => {
                   <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 border-b border-blue-200">
                     <div className="flex items-center space-x-3">
                       <Avatar className="h-12 w-12 ring-2 ring-white shadow-lg">
-                        <AvatarImage src={user?.avatar || "/placeholder.svg?height=48&width=48"} alt={user?.name} />
+                        <AvatarImage src={user?.avatar || "/placeholder.svg"} alt={user?.name} />
                         <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-500 text-white font-bold text-lg">
                           {user?.name ? getInitials(user.name) : "U"}
                         </AvatarFallback>
@@ -538,18 +538,6 @@ export const Header: React.FC = () => {
                       align="end"
                       className="w-48 bg-gradient-to-br from-white via-blue-50 to-purple-50 border-2 border-blue-200 shadow-xl"
                     >
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setIsCreateTaskModalOpen(true)
-                          setIsMobileMenuOpen(false)
-                        }}
-                        className="hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 cursor-pointer"
-                      >
-                        <div className="flex items-center space-x-2">
-                          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                          <span>New Task</span>
-                        </div>
-                      </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => {
                           setIsCreateBoardModalOpen(true)

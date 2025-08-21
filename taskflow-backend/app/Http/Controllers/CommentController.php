@@ -26,7 +26,7 @@ class CommentController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $comments
+            'data' => \App\Http\Resources\TaskCommentResource::collection($comments)
         ]);
     }
 
@@ -90,9 +90,10 @@ class CommentController extends Controller
             }
         } catch (\Throwable $e) {}
 
+        $fresh = $comment->load(['user', 'replies.user']);
         return response()->json([
             'success' => true,
-            'data' => $comment->load(['user', 'replies.user'])
+            'data' => new \App\Http\Resources\TaskCommentResource($fresh)
         ], 201);
     }
 

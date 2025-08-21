@@ -111,6 +111,8 @@ export function copyToClipboard(text: string): Promise<void> {
     try {
       document.execCommand("copy")
     } catch (err) {
+      // Keep as console.error intentionally, helpers is used outside app context
+      // but route through logger would be fine too; keeping minimal change
       console.error("Fallback: Oops, unable to copy", err)
     }
     document.body.removeChild(textArea)

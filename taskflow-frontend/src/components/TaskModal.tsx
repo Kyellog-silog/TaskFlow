@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { MessageSquare, User, Clock, Tag, Calendar, Flag, Sparkles, Send, X, Save, CornerDownRight } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Button } from "./ui/button"
@@ -15,6 +15,7 @@ import { useQuery, useMutation, useQueryClient } from "react-query"
 import { commentsAPI } from "../services/api"
 // SSE handled globally in App-level bridge
 import { useAuth } from "../contexts/AuthContext"
+import logger from "../lib/logger"
 
 interface Task {
   id: string
@@ -60,23 +61,46 @@ export function TaskModal({ task, isOpen, onClose, onUpdate, onMove }: TaskModal
   const queryClient = useQueryClient()
   const { user } = useAuth()
 
+  const toInputDate = (s?: string): string => {
+    if (!s) return ""
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+
+    let d = new Date(s)
+    if (isNaN(d.getTime())) {
+      const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
+      if (mdy) {
+        const mm = parseInt(mdy[1], 10)
+        const dd = parseInt(mdy[2], 10)
+        let yyyy = parseInt(mdy[3], 10)
+        if (yyyy < 100) yyyy += 2000
+        d = new Date(yyyy, mm - 1, dd)
+      } else {
+        return ""
+      }
+    }
+    const pad = (n: number) => String(n).padStart(2, "0")
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  }
+
+  const inputDueDate = useMemo(() => toInputDate(editedTask.dueDate), [editedTask.dueDate])
+
   // Update editedTask when task prop changes
   useEffect(() => {
-    console.log("TaskModal received task:", task)
-    console.log("Task status:", task.status)
+    logger.log("TaskModal received task:", task)
+    logger.log("Task status:", task.status)
     setEditedTask(task)
     setOriginalStatus(task.status)
   }, [task])
 
   const handleSave = () => {
-    console.log(`Saving task. Original status: ${originalStatus}, New status: ${editedTask.status}`)
+    logger.log(`Saving task. Original status: ${originalStatus}, New status: ${editedTask.status}`)
     
     // Always update the task first
     onUpdate(editedTask)
     
     // Check if status changed and trigger move if needed
     if (editedTask.status !== originalStatus && onMove) {
-      console.log(`Status changed from ${originalStatus} to ${editedTask.status}, triggering move`)
+      logger.log(`Status changed from ${originalStatus} to ${editedTask.status}, triggering move`)
       // Small delay to ensure the update completes first
       setTimeout(() => {
         onMove(editedTask.id, editedTask.status)
@@ -87,7 +111,7 @@ export function TaskModal({ task, isOpen, onClose, onUpdate, onMove }: TaskModal
   }
 
   const handleStatusChange = (newStatus: string) => {
-    console.log(`Changing task status from ${editedTask.status} to ${newStatus}`)
+    logger.log(`Changing task status from ${editedTask.status} to ${newStatus}`)
     setEditedTask({ ...editedTask, status: newStatus })
   }
 
@@ -296,7 +320,7 @@ export function TaskModal({ task, isOpen, onClose, onUpdate, onMove }: TaskModal
               </label>
               <Input
                 type="date"
-                value={editedTask.dueDate || ""}
+                value={inputDueDate}
                 onChange={(e) => setEditedTask({ ...editedTask, dueDate: e.target.value })}
                 className="bg-white border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200 text-gray-900"
               />
@@ -449,7 +473,7 @@ export function TaskModal({ task, isOpen, onClose, onUpdate, onMove }: TaskModal
             <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-4 rounded-xl border-2 border-blue-200">
               <div className="flex space-x-3">
                 <Avatar className="h-10 w-10 ring-2 ring-white shadow-sm">
-                  <AvatarImage src="/placeholder.svg?height=40&width=40" />
+                  <AvatarImage src="/placeholder.svg" />
                   <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-500 text-white font-bold">
                     CU
                   </AvatarFallback>

@@ -4,48 +4,111 @@ namespace App\Http\Controllers;
 
 use App\Models\Team;
 use App\Models\User;
+use App\Services\PerformanceMonitor;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class TeamController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $teams = Team::forUser($request->user()->id)
-                    ->with(['owner', 'members', 'boards'])
-                    ->withCount(['members', 'boards'])
-                    ->get()
-                    ->map(function ($team) {
-                        // Calculate total tasks across all team boards
-                        $tasksCount = $team->boards()->withCount('tasks')->get()->sum('tasks_count');
-                        
-                        return [
-                            'id' => $team->id,
-                            'name' => $team->name,
-                            'description' => $team->description,
-                            'owner' => $team->owner,
-                            'members' => $team->members->map(function ($member) {
-                                return [
-                                    'id' => $member->id,
-                                    'name' => $member->name,
-                                    'email' => $member->email,
-                                    'avatar' => $member->avatar_url ?? null,
-                                    'role' => $member->pivot->role,
-                                    'joined_at' => $member->pivot->joined_at,
-                                ];
-                            }),
-                            'boards' => $team->boards_count,
-                            'tasks' => $tasksCount,
-                            'created_at' => $team->created_at,
-                            'updated_at' => $team->updated_at,
-                        ];
-                    });
+        $requestStartTime = microtime(true);
+        PerformanceMonitor::enable();
+        PerformanceMonitor::enableQueryLogging();
+        
+        try {
+            $user = $request->user();
+            Log::info('Fetching teams', ['user_id' => $user->id]);
+            
+            PerformanceMonitor::startTimer('teams_query_building', [
+                'user_id' => $user->id
+            ]);
 
-        return response()->json([
-            'success' => true,
-            'data' => $teams
-        ]);
+            // Single efficient query with proper aggregation
+            $teams = Team::forUser($user->id)
+                        ->with([
+                            'owner:id,name,avatar', 
+                            'members' => function($q){ 
+                                $q->select('users.id','users.name','users.avatar'); 
+                            }
+                        ])
+                        ->withCount(['members', 'boards'])
+                        ->get();
+
+            PerformanceMonitor::endTimer('teams_query_building');
+
+            PerformanceMonitor::startTimer('teams_tasks_count_aggregation', [
+                'teams_count' => $teams->count()
+            ]);
+
+            // Efficiently get task counts for all teams at once
+            $teamIds = $teams->pluck('id');
+            $taskCounts = DB::table('tasks')
+                ->join('boards', 'tasks.board_id', '=', 'boards.id')
+                ->whereIn('boards.team_id', $teamIds)
+                ->whereNull('tasks.deleted_at')
+                ->whereNull('boards.deleted_at')
+                ->select('boards.team_id', DB::raw('count(*) as task_count'))
+                ->groupBy('boards.team_id')
+                ->pluck('task_count', 'team_id');
+
+            PerformanceMonitor::endTimer('teams_tasks_count_aggregation');
+
+            PerformanceMonitor::startTimer('teams_response_formatting');
+
+            $formattedTeams = $teams->map(function ($team) use ($taskCounts) {
+                return [
+                    'id' => $team->id,
+                    'name' => $team->name,
+                    'description' => $team->description,
+                    'owner' => [ 
+                        'id' => $team->owner->id, 
+                        'name' => $team->owner->name, 
+                        'avatar' => $team->owner->avatar 
+                    ],
+                    'members' => $team->members->map(function ($member) {
+                        return [
+                            'id' => $member->id,
+                            'name' => $member->name,
+                            'avatar' => $member->avatar ?? null,
+                            'role' => $member->pivot->role,
+                            'joined_at' => $member->pivot->joined_at,
+                        ];
+                    }),
+                    'boards' => $team->boards_count,
+                    'tasks' => $taskCounts[$team->id] ?? 0,
+                    'created_at' => $team->created_at,
+                    'updated_at' => $team->updated_at,
+                ];
+            });
+
+            PerformanceMonitor::endTimer('teams_response_formatting');
+            PerformanceMonitor::logQueryStats('teams_index');
+
+            Log::info('Teams fetched successfully', ['count' => $teams->count()]);
+
+            $response = response()->json([
+                'success' => true,
+                'data' => $formattedTeams
+            ]);
+
+            PerformanceMonitor::logRequestSummary('GET /teams', microtime(true) - $requestStartTime, strlen($response->getContent()));
+            return $response;
+        } catch (\Exception $e) {
+            PerformanceMonitor::logQueryStats('teams_index_error');
+            Log::error('Error fetching teams', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch teams: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     public function store(Request $request): JsonResponse
@@ -74,7 +137,7 @@ class TeamController extends Controller
     {
         Gate::authorize('view', $team);
 
-        $team->load(['owner', 'members', 'boards']);
+    $team->load(['owner:id,name,avatar', 'members' => function($q){ $q->select('users.id','users.name','users.avatar'); }, 'boards']);
         $tasksCount = $team->boards()->withCount('tasks')->get()->sum('tasks_count');
 
         return response()->json([
@@ -83,13 +146,12 @@ class TeamController extends Controller
                 'id' => $team->id,
                 'name' => $team->name,
                 'description' => $team->description,
-                'owner' => $team->owner,
+                'owner' => [ 'id' => $team->owner->id, 'name' => $team->owner->name, 'avatar' => $team->owner->avatar ],
                 'members' => $team->members->map(function ($member) {
                     return [
                         'id' => $member->id,
                         'name' => $member->name,
-                        'email' => $member->email,
-                        'avatar' => $member->avatar_url ?? null,
+                        'avatar' => $member->avatar ?? null,
                         'role' => $member->pivot->role,
                         'joined_at' => $member->pivot->joined_at,
                     ];
@@ -113,9 +175,27 @@ class TeamController extends Controller
 
         $team->update($validated);
 
+        $fresh = $team->fresh(['owner:id,name,avatar', 'members' => function($q){ $q->select('users.id','users.name','users.avatar'); }, 'boards']);
         return response()->json([
             'success' => true,
-            'data' => $team->fresh(['owner', 'members', 'boards'])
+            'data' => [
+                'id' => $fresh->id,
+                'name' => $fresh->name,
+                'description' => $fresh->description,
+                'owner' => [ 'id' => $fresh->owner->id, 'name' => $fresh->owner->name, 'avatar' => $fresh->owner->avatar ],
+                'members' => $fresh->members->map(function ($member) {
+                    return [
+                        'id' => $member->id,
+                        'name' => $member->name,
+                        'avatar' => $member->avatar ?? null,
+                        'role' => $member->pivot->role,
+                        'joined_at' => $member->pivot->joined_at,
+                    ];
+                }),
+                'boards' => $fresh->boards->count(),
+                'created_at' => $fresh->created_at,
+                'updated_at' => $fresh->updated_at,
+            ]
         ]);
     }
 
@@ -152,10 +232,22 @@ class TeamController extends Controller
 
         $team->addMember($user, $role);
 
+        $fresh = $team->fresh(['members' => function($q){ $q->select('users.id','users.name','users.avatar'); }]);
         return response()->json([
             'success' => true,
             'message' => 'Member added successfully',
-            'data' => $team->fresh(['members'])
+            'data' => [
+                'id' => $fresh->id,
+                'members' => $fresh->members->map(function ($member) {
+                    return [
+                        'id' => $member->id,
+                        'name' => $member->name,
+                        'avatar' => $member->avatar ?? null,
+                        'role' => $member->pivot->role,
+                        'joined_at' => $member->pivot->joined_at,
+                    ];
+                }),
+            ]
         ]);
     }
 
@@ -222,10 +314,22 @@ class TeamController extends Controller
             // Don't fail the request if SSE queueing fails
         }
 
+        $fresh = $team->fresh(['members' => function($q){ $q->select('users.id','users.name','users.avatar'); }]);
         return response()->json([
             'success' => true,
             'message' => 'Member role updated successfully',
-            'data' => $team->fresh(['members'])
+            'data' => [
+                'id' => $fresh->id,
+                'members' => $fresh->members->map(function ($member) {
+                    return [
+                        'id' => $member->id,
+                        'name' => $member->name,
+                        'avatar' => $member->avatar ?? null,
+                        'role' => $member->pivot->role,
+                        'joined_at' => $member->pivot->joined_at,
+                    ];
+                }),
+            ]
         ]);
     }
 

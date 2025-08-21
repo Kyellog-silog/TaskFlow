@@ -1,3 +1,4 @@
+import logger from "../lib/logger"
 
 interface TaskMoveEvent {
   type: 'task.moved'
@@ -43,12 +44,12 @@ class WebSocketService {
     connect(url: string, onMessage?: (data: any) => void) {
       // Skip connection if WebSocket is disabled or server is unavailable
       if (!this.isEnabled) {
-        console.log("WebSocket is disabled - running in offline mode")
+  logger.log("WebSocket is disabled - running in offline mode")
         return
       }
 
       if (this.isConnecting || (this.ws && this.ws.readyState === WebSocket.CONNECTING)) {
-        console.log("WebSocket connection already in progress")
+  logger.log("WebSocket connection already in progress")
         return
       }
 
@@ -58,7 +59,7 @@ class WebSocketService {
         this.ws = new WebSocket(url)
   
         this.ws.onopen = () => {
-          console.log("WebSocket connected")
+          logger.log("WebSocket connected")
           this.reconnectAttempts = 0
           this.isConnecting = false
           
@@ -81,22 +82,22 @@ class WebSocketService {
         }
   
         this.ws.onclose = () => {
-          console.log("WebSocket disconnected")
+          logger.log("WebSocket disconnected")
           this.isConnecting = false
           this.handleReconnect(url, onMessage)
         }
   
         this.ws.onerror = (error) => {
-          console.error("WebSocket error:", error)
+          logger.error("WebSocket error:", error)
           this.isConnecting = false
           // Disable WebSocket after repeated failures
           if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-            console.log("WebSocket server unavailable - switching to offline mode")
+            logger.log("WebSocket server unavailable - switching to offline mode")
             this.disable()
           }
         }
       } catch (error) {
-        console.error("Failed to connect WebSocket:", error)
+  logger.error("Failed to connect WebSocket:", error)
         this.isConnecting = false
         this.disable()
       }
@@ -114,7 +115,7 @@ class WebSocketService {
           this.eventHandlers.onUserLeft?.(data.data)
           break
         default:
-          console.log('Unhandled WebSocket message:', data)
+          logger.log('Unhandled WebSocket message:', data)
       }
     }
 
@@ -164,11 +165,11 @@ class WebSocketService {
       if (this.reconnectAttempts < this.maxReconnectAttempts && this.isEnabled) {
         this.reconnectAttempts++
         setTimeout(() => {
-          console.log(`Attempting to reconnect... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
+          logger.log(`Attempting to reconnect... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
           this.connect(url, onMessage)
         }, this.reconnectInterval * this.reconnectAttempts)
       } else {
-        console.log("Max reconnect attempts reached or WebSocket disabled")
+  logger.log("Max reconnect attempts reached or WebSocket disabled")
         this.disable()
       }
     }
@@ -183,7 +184,7 @@ class WebSocketService {
       } else {
         // Only queue if we're still trying to connect
         if (this.isConnecting || this.reconnectAttempts < this.maxReconnectAttempts) {
-          console.log('WebSocket not connected, queuing message:', data)
+          logger.log('WebSocket not connected, queuing message:', data)
           this.messageQueue.push(data)
         }
       }

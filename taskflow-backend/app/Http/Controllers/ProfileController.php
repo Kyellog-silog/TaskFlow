@@ -30,24 +30,103 @@ class ProfileController extends Controller
     {
         $user = $request->user();
         $limit = (int) $request->get('limit', 10);
-        $activities = TaskActivity::with(['task:id,title,board_id', 'user:id,name'])
+
+        // Task-based activities (created, moved, completed, etc.)
+        $taskActivities = TaskActivity::with(['task:id,title,board_id', 'user:id,name'])
             ->where('user_id', $user->id)
             ->latest()
-            ->limit($limit)
+            ->limit($limit * 2) // get extra to allow merging before slicing
             ->get()
             ->map(function ($a) {
                 return [
-                    'id' => $a->id,
+                    'id' => 'task-'.$a->id,
+                    'type' => 'task',
                     'action' => $a->action,
                     'description' => $a->description,
-                    'task' => $a->task ? [ 'id' => $a->task->id, 'title' => $a->task->title ] : null,
+                    'task' => $a->task ? [ 'id' => $a->task->id, 'title' => $a->task->title, 'board_id' => $a->task->board_id ] : null,
                     'created_at' => $a->created_at,
                 ];
             });
 
+        // Boards created by the user
+        $boards = \App\Models\Board::where('created_by', $user->id)
+            ->latest()
+            ->limit($limit)
+            ->get()
+            ->map(function ($b) {
+                return [
+                    'id' => 'board-'.$b->id,
+                    'type' => 'board',
+                    'action' => 'created',
+                    'description' => 'Board created: '.$b->name,
+                    'task' => null,
+                    'board' => [ 'id' => $b->id, 'name' => $b->name ],
+                    'created_at' => $b->created_at,
+                ];
+            });
+
+        // Boards deleted by the user (soft deletes)
+        $deletedBoards = \App\Models\Board::onlyTrashed()
+            ->where('created_by', $user->id)
+            ->latest('deleted_at')
+            ->limit($limit)
+            ->get()
+            ->map(function ($b) {
+                return [
+                    'id' => 'board-del-'.$b->id,
+                    'type' => 'board',
+                    'action' => 'deleted',
+                    'description' => 'Board deleted: '.($b->name ?? 'Untitled'),
+                    'task' => null,
+                    'board' => [ 'id' => $b->id, 'name' => $b->name ],
+                    'created_at' => $b->deleted_at ?? $b->updated_at,
+                ];
+            });
+
+        // Teams created by the user
+        $teamCreates = \App\Models\Team::where('owner_id', $user->id)
+            ->latest()
+            ->limit($limit)
+            ->get()
+            ->map(function ($t) {
+                return [
+                    'id' => 'team-'.$t->id,
+                    'type' => 'team',
+                    'action' => 'created',
+                    'description' => 'Team created: '.$t->name,
+                    'task' => null,
+                    'team' => [ 'id' => $t->id, 'name' => $t->name ],
+                    'created_at' => $t->created_at,
+                ];
+            });
+
+        // Teams the user joined (pivot joined_at)
+        $teamJoins = $user->teams()->withPivot('joined_at')->get()->filter(function($t){
+            return !empty($t->pivot->joined_at);
+        })->map(function($t) {
+            return [
+                'id' => 'team-join-'.$t->id,
+                'type' => 'team',
+                'action' => 'joined',
+                'description' => 'Joined team: '.$t->name,
+                'task' => null,
+                'team' => [ 'id' => $t->id, 'name' => $t->name ],
+                'created_at' => $t->pivot->joined_at,
+            ];
+        });
+
+        $combined = $taskActivities
+            ->concat($boards)
+            ->concat($deletedBoards)
+            ->concat($teamCreates)
+            ->concat($teamJoins)
+            ->sortByDesc('created_at')
+            ->values()
+            ->take($limit);
+
         return response()->json([
             'success' => true,
-            'data' => $activities,
+            'data' => $combined,
         ]);
     }
 
@@ -163,7 +242,7 @@ class ProfileController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => [ 'user' => $user->fresh() ],
+            'data' => [ 'user' => new \App\Http\Resources\UserResource($user->fresh()) ],
             'message' => 'Avatar updated',
         ]);
     }

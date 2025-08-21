@@ -11,10 +11,11 @@ import { Button } from "../components/ui/button"
 import { Badge } from "../components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "../components/ui/dropdown-menu"
-import { boardsAPI, tasksAPI } from "../services/api"
+import { boardsAPI, tasksAPI, profileAPI } from "../services/api"
 import { useToast } from "../hooks/use-toast"
 import { useAuth } from "../contexts/AuthContext"
 import { Calendar, Users, CheckSquare, Clock, MoreVertical, Folder, RefreshCw, Sparkles, Target, Edit, Trash2, Copy, ExternalLink, TrendingUp, Activity, Eye, Archive } from 'lucide-react'
+import logger from "../lib/logger"
 
 
 const DashboardPage = () => {
@@ -40,11 +41,13 @@ const DashboardPage = () => {
       return response
     },
     {
-      refetchOnWindowFocus: true,
-      refetchOnMount: true,
-      staleTime: 0,
+  // Idle-friendly: rely on SSE to invalidate; don't refetch on focus/mount
+  refetchOnWindowFocus: false,
+  refetchOnMount: false,
+  refetchInterval: false,
+  staleTime: 5 * 60 * 1000,
       onError: (error: any) => {
-        console.error("Failed to fetch recent boards:", error)
+        logger.error("Failed to fetch recent boards:", error)
         toast({
           title: "Error",
           description: "Failed to load recent boards",
@@ -83,9 +86,11 @@ const DashboardPage = () => {
       return response
     },
     {
-      refetchOnWindowFocus: true,
-      refetchOnMount: true,
-      staleTime: 0,
+  // Idle-friendly: rely on SSE to invalidate; don't refetch on focus/mount
+  refetchOnWindowFocus: false,
+  refetchOnMount: false,
+  refetchInterval: false,
+  staleTime: 5 * 60 * 1000,
     },
   )
 
@@ -96,7 +101,7 @@ const DashboardPage = () => {
       const res = await tasksAPI.getDueTodayCount()
       return res
     },
-    { staleTime: 60 * 1000, refetchOnWindowFocus: true }
+  { staleTime: 60 * 1000, refetchOnWindowFocus: false, refetchOnMount: false }
   )
   const { data: dueSoonData, isLoading: dueSoonLoading } = useQuery(
     ["tasks", "due-soon", { days: 3, uncompleted: true }],
@@ -104,8 +109,33 @@ const DashboardPage = () => {
       const res = await tasksAPI.getDueSoonCount(3)
       return res
     },
-    { staleTime: 60 * 1000, refetchOnWindowFocus: true }
+  { staleTime: 60 * 1000, refetchOnWindowFocus: false, refetchOnMount: false }
   )
+
+  // Recent activity for this user
+  const { data: activityResp } = useQuery(
+    ["profile", "activity", { limit: 5 }],
+  () => profileAPI.getActivity(5),
+  { staleTime: 30_000, refetchOnMount: true, refetchOnWindowFocus: false }
+  )
+  const activities = (activityResp?.data || [])
+    .filter((a: any) => ['created','completed','moved','joined','deleted'].includes(a.action))
+    .map((a: any) => {
+      const isMovedToDone = a.action === 'moved' && /to\s*Done/i.test(a.description || '')
+      const kind = isMovedToDone ? 'completed' : a.action
+      // Prefer task title; else board/team description
+      const title = a.task?.title || a.board?.name || a.team?.name || a.description
+      // Target board for navigation: from task->board_id; else board.id
+      const navBoardId = a.task?.board_id || a.board?.id || null
+      return {
+        id: a.id,
+        kind,
+        title,
+        boardId: navBoardId,
+        time: new Date(a.created_at).toLocaleString(),
+      }
+    })
+    .slice(0, 5)
 
   // Delete board mutation
   const deleteBoardMutation = useMutation(
@@ -156,9 +186,11 @@ const DashboardPage = () => {
 
   // Handle board creation success
   const handleBoardCreated = (newBoard: any) => {
-    console.log("New board created:", newBoard)
+  logger.log("New board created:", newBoard)
     refetchRecentBoards()
     queryClient.invalidateQueries(["boards", "active"])
+  // Surface the create event in Recent Activity
+  queryClient.invalidateQueries(["profile", "activity"]) 
     toast({
       title: "Success! 🎉",
       description: "Board created successfully",
@@ -167,9 +199,11 @@ const DashboardPage = () => {
 
   // Handle board update success
   const handleBoardUpdated = (updatedBoard: any) => {
-    console.log("Board updated:", updatedBoard)
+  logger.log("Board updated:", updatedBoard)
     refetchRecentBoards()
     queryClient.invalidateQueries(["boards", "active"])
+  // Ensure activity reflects changes if any
+  queryClient.invalidateQueries(["profile", "activity"]) 
     setEditBoard(null)
     toast({
       title: "Success! ✨",
@@ -543,7 +577,7 @@ const DashboardPage = () => {
                         <div className="flex items-center justify-between pt-3 border-t border-gray-200">
                           <div className="flex items-center space-x-3">
                             <Avatar className="h-8 w-8 ring-2 ring-white shadow-md">
-                              <AvatarImage src={board.created_by?.avatar || "/placeholder.svg?height=32&width=32"} />
+                              <AvatarImage src={board.created_by?.avatar || "/placeholder.svg"} />
                               <AvatarFallback className="text-xs bg-gradient-to-br from-blue-500 to-purple-500 text-white font-bold">
                                 {board.created_by?.name?.charAt(0) || "U"}
                               </AvatarFallback>
@@ -593,41 +627,31 @@ const DashboardPage = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <div className="flex items-start space-x-4 p-3 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg border border-blue-200">
-                  <div className="h-3 w-3 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full mt-2 flex-shrink-0"></div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-900">New board created: "Test board"</p>
-                    <p className="text-xs text-gray-500 mt-1">Just now • by {user?.name}</p>
-                  </div>
-                  <Badge className="bg-blue-100 text-blue-700 text-xs">New</Badge>
-                </div>
-                
-                <div className="flex items-start space-x-4 p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
-                  <div className="h-3 w-3 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full mt-2 flex-shrink-0"></div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-900">Task completed in Development Board</p>
-                    <p className="text-xs text-gray-500 mt-1">2 hours ago • by Team Member</p>
-                  </div>
-                  <Badge className="bg-green-100 text-green-700 text-xs">Completed</Badge>
-                </div>
-                
-                <div className="flex items-start space-x-4 p-3 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border border-purple-200">
-                  <div className="h-3 w-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full mt-2 flex-shrink-0"></div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-900">New team member added</p>
-                    <p className="text-xs text-gray-500 mt-1">1 day ago • by Admin</p>
-                  </div>
-                  <Badge className="bg-purple-100 text-purple-700 text-xs">Team</Badge>
-                </div>
-                
-                {recentBoards.length === 0 && (
+                {activities.length === 0 ? (
                   <div className="text-center py-8">
                     <div className="text-gray-400 mb-3">
                       <Activity className="h-12 w-12 mx-auto" />
                     </div>
                     <p className="text-sm text-gray-500">No recent activity to show</p>
-                    <p className="text-xs text-gray-400 mt-1">Create your first board to get started!</p>
+                    <p className="text-xs text-gray-400 mt-1">Create your first board or task to get started!</p>
                   </div>
+                ) : (
+                  activities.map((a: any) => (
+                    <div
+                      key={a.id}
+                      className="flex items-start space-x-4 p-3 rounded-lg border cursor-pointer hover:bg-gray-50"
+                      onClick={() => a.boardId && navigate(`/boards/${a.boardId}`)}
+                    >
+                      <div className={`h-3 w-3 rounded-full mt-2 flex-shrink-0 ${a.kind === 'completed' ? 'bg-green-500' : a.kind === 'created' ? 'bg-blue-500' : a.kind === 'deleted' ? 'bg-red-500' : 'bg-purple-500'}`}></div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900">{a.title}</p>
+                        <p className="text-xs text-gray-500 mt-1">{a.time}</p>
+                      </div>
+                      <Badge className={`${a.kind === 'completed' ? 'bg-green-100 text-green-700' : a.kind === 'created' ? 'bg-blue-100 text-blue-700' : a.kind === 'deleted' ? 'bg-red-100 text-red-700' : 'bg-purple-100 text-purple-700'} text-xs`}>
+                        {a.kind === 'completed' ? 'Completed' : a.kind === 'created' ? 'New' : a.kind === 'deleted' ? 'Deleted' : 'Updated'}
+                      </Badge>
+                    </div>
+                  ))
                 )}
               </div>
             </CardContent>

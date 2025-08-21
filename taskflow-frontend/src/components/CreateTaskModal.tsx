@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { tasksAPI } from "../services/api"
 import { useToast } from "../hooks/use-toast"
 import { Plus, Calendar, Sparkles, Target, Flag } from 'lucide-react'
+import logger from "../lib/logger"
 
 // Define two separate interfaces to handle different use cases
 interface BaseCreateTaskModalProps {
@@ -82,7 +83,7 @@ export function CreateTaskModal({
           board_id: boardId,
           column_id: columnId,
         };
-        console.log('Sending task payload:', payload);
+  logger.log('Sending task payload:', payload);
         return await tasksAPI.createTask(payload);
       }
       throw new Error('boardId is required for direct API calls');
@@ -112,7 +113,7 @@ export function CreateTaskModal({
         });
       },
       onError: (error: any) => {
-        console.error("Task creation error:", error);
+        logger.error("Task creation error:", error);
         toast({
           title: "Oops! Something went wrong",
           description: error.response?.data?.message || error.message || "Failed to create task",
@@ -153,7 +154,7 @@ export function CreateTaskModal({
       columnId: columnId,
     };
 
-    console.log("Submitting task data:", taskData);
+  logger.log("Submitting task data:", taskData);
     
     // If using callback approach
     if (onSubmit) {

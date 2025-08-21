@@ -183,7 +183,7 @@ export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
           <div className="flex items-center justify-between pt-2 border-t border-gray-100">
             <div className="flex items-center space-x-2">
               <Avatar className="h-6 w-6 ring-2 ring-white shadow-sm">
-                <AvatarImage src={task.assignee?.avatar || "/placeholder.svg?height=24&width=24"} />
+                <AvatarImage src={task.assignee?.avatar || "/placeholder.svg"} />
                 <AvatarFallback className="text-xs bg-gradient-to-br from-blue-500 to-purple-500 text-white">
                   {task.assignee?.name
                     ?.split(" ")

@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Board;
 use App\Models\Team;
+use App\Models\Task;
 use App\Models\BoardColumn;
+use App\Services\PerformanceMonitor;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Gate;
@@ -30,7 +32,11 @@ class BoardController extends Controller
             ]);
             
             $query = Board::forUser($user->id)
-                ->with(['createdBy', 'team', 'columns'])
+                ->with([
+                    'createdBy:id,name',
+                    'team:id,name,owner_id',
+                    'columns:id,board_id,name,position,color',
+                ])
                 ->withCount(['tasks']);
 
             switch ($type) {
@@ -60,10 +66,13 @@ class BoardController extends Controller
                 'type' => $type
             ]);
             
-            return response()->json([
+            $response = response()->json([
                 'success' => true,
-                'data' => $boards
+                'data' => \App\Http\Resources\BoardResource::collection($boards)
             ]);
+            // Safe caching for listing (user-bound via auth cookie; mark private)
+            $response->headers->set('Cache-Control', 'private, max-age=60');
+            return $response;
         } catch (\Exception $e) {
             Log::error('Error fetching boards', [
                 'error' => $e->getMessage(),
@@ -142,9 +151,18 @@ class BoardController extends Controller
             $board = $board->fresh(['team', 'createdBy', 'columns']);
             Log::info('Board created successfully', ['board_id' => $board->id]);
             
+            // Optional: queue an SSE event so other clients can react
+            try {
+                \App\Http\Controllers\EventsController::queueEvent('board.created', [
+                    'boardId' => $board->id,
+                    'userId' => $request->user()->id,
+                    'timestamp' => now()->toISOString(),
+                ]);
+            } catch (\Throwable $e) {}
+            
             return response()->json([
                 'success' => true,
-                'data' => $board
+                'data' => new \App\Http\Resources\BoardResource($board)
             ], 201);
         } catch (\Exception $e) {
             DB::rollback();
@@ -171,25 +189,51 @@ class BoardController extends Controller
             Log::info('Loading board with relationships', ['board_id' => $board->id]);
             
             // Load relationships step by step to debug
+
+            // SSE for board deletion
+            try {
+                EventsController::queueEvent('board.deleted', [
+                    'boardId' => $board->id,
+                    'userId' => $request->user()->id,
+                    'timestamp' => now()->toISOString(),
+                ]);
+            } catch (\Throwable $e) {}
+            
+            // Load board with basic relationships first
             $board->load([
-                'team', 
-                'createdBy', 
+                'team:id,name,owner_id', 
+                'createdBy:id,name', 
                 'columns' => function ($query) {
-                    $query->orderBy('position');
+                    $query->orderBy('position')
+                          ->select('id', 'board_id', 'name', 'position', 'color');
                 }
             ]);
             
-            // Load tasks separately to avoid the relationship issue
+            // Load tasks in bulk for all columns to avoid N+1 queries
+            $allTasks = Task::whereIn('column_id', $board->columns->pluck('id'))
+                ->with(['assignee:id,name,avatar', 'createdBy:id,name'])
+                ->orderBy('position')
+                ->get()
+                ->groupBy('column_id');
+
+            // Attach tasks to their respective columns
             foreach ($board->columns as $column) {
-                $column->load([
-                    'tasks' => function ($query) {
-                        $query->orderBy('position');
-                    },
-                    'tasks.assignee',
-                    'tasks.comments' => function ($query) {
-                        $query->latest()->limit(5);
+                $column->tasks = $allTasks->get($column->id, collect());
+                
+                // Load limited comments for each task if needed
+                if ($column->tasks->isNotEmpty()) {
+                    $taskIds = $column->tasks->pluck('id');
+                    $comments = \App\Models\TaskComment::whereIn('task_id', $taskIds)
+                        ->with('user:id,name,avatar')
+                        ->latest()
+                        ->limit(5 * $column->tasks->count()) // 5 per task max
+                        ->get()
+                        ->groupBy('task_id');
+                    
+                    foreach ($column->tasks as $task) {
+                        $task->comments = $comments->get($task->id, collect())->take(5);
                     }
-                ]);
+                }
             }
             
             // Compute effective permissions for the current user (backend source of truth)
@@ -207,12 +251,14 @@ class BoardController extends Controller
 
             Log::info('Board loaded successfully', ['board_id' => $board->id]);
             
-            return response()->json([
+            $response = response()->json([
                 'success' => true,
-                'data' => array_merge($board->toArray(), [
+                'data' => array_merge((new \App\Http\Resources\BoardResource($board))->toArray($request), [
                     'permissions' => $permissions,
                 ])
             ]);
+            $response->headers->set('Cache-Control', 'private, max-age=30');
+            return $response;
         } catch (\Exception $e) {
             Log::error('Error fetching board', [
                 'board_id' => $board->id,
@@ -241,9 +287,10 @@ class BoardController extends Controller
             $board->update($validated);
             Log::info('Board updated successfully', ['board_id' => $board->id]);
             
+            $fresh = $board->fresh(['team', 'createdBy', 'columns']);
             return response()->json([
                 'success' => true,
-                'data' => $board->fresh(['team', 'createdBy', 'columns'])
+                'data' => new \App\Http\Resources\BoardResource($fresh)
             ]);
         } catch (\Exception $e) {
             Log::error('Error updating board', [
@@ -311,10 +358,11 @@ class BoardController extends Controller
                 ]);
             } catch (\Throwable $e) {}
             
+            $fresh = $board->fresh(['team', 'createdBy', 'columns']);
             return response()->json([
                 'success' => true,
                 'message' => 'Board archived successfully',
-                'data' => $board->fresh(['team', 'createdBy', 'columns'])
+                'data' => new \App\Http\Resources\BoardResource($fresh)
             ]);
         } catch (\Exception $e) {
             Log::error('Error archiving board', [
@@ -347,10 +395,11 @@ class BoardController extends Controller
                 ]);
             } catch (\Throwable $e) {}
             
+            $fresh = $board->fresh(['team', 'createdBy', 'columns']);
             return response()->json([
                 'success' => true,
                 'message' => 'Board unarchived successfully',
-                'data' => $board->fresh(['team', 'createdBy', 'columns'])
+                'data' => new \App\Http\Resources\BoardResource($fresh)
             ]);
         } catch (\Exception $e) {
             Log::error('Error unarchiving board', [
@@ -384,10 +433,11 @@ class BoardController extends Controller
                 ]);
             } catch (\Throwable $e) {}
             
+            $fresh = $board->fresh(['team', 'createdBy', 'columns']);
             return response()->json([
                 'success' => true,
                 'message' => 'Board restored successfully',
-                'data' => $board->fresh(['team', 'createdBy', 'columns'])
+                'data' => new \App\Http\Resources\BoardResource($fresh)
             ]);
         } catch (\Exception $e) {
             Log::error('Error restoring board', [
@@ -410,7 +460,10 @@ class BoardController extends Controller
             Log::info('Fetching boards by team', ['team_id' => $team->id]);
             
             $boards = $team->boards()
-                ->with(['createdBy', 'columns'])
+                ->with([
+                    'createdBy:id,name',
+                    'columns:id,board_id,name,position,color',
+                ])
                 ->withCount(['tasks'])
                 ->get();
                 
@@ -421,7 +474,7 @@ class BoardController extends Controller
                 
             return response()->json([
                 'success' => true,
-                'data' => $boards
+                'data' => \App\Http\Resources\BoardResource::collection($boards)
             ]);
         } catch (\Exception $e) {
             Log::error('Error fetching team boards', [
@@ -442,25 +495,53 @@ class BoardController extends Controller
      */
     public function getTeams(Request $request, Board $board): JsonResponse
     {
+        $requestStartTime = microtime(true);
+        PerformanceMonitor::enable();
+        PerformanceMonitor::enableQueryLogging();
+        
         try {
             Gate::authorize('view', $board);
+            Log::info('Fetching board teams', ['board_id' => $board->id]);
             
-            // If board has a team, return that team
+            PerformanceMonitor::startTimer('board_teams_query', [
+                'board_id' => $board->id
+            ]);
+
+            // Efficiently load board team with relationships
             $teams = [];
-            if ($board->team) {
-                $teams = [$board->team->load('owner', 'members')];
+            if ($board->team_id) {
+                $team = $board->team()->with([
+                    'owner:id,name,avatar', 
+                    'members:id,name,avatar'
+                ])->first();
+                
+                if ($team) {
+                    $teams = [$team];
+                }
             }
+            
+            PerformanceMonitor::endTimer('board_teams_query', [
+                'teams_count' => count($teams)
+            ]);
+            
+            PerformanceMonitor::logQueryStats('board_teams');
             
             Log::info('Board teams fetched', [
                 'board_id' => $board->id,
                 'teams_count' => count($teams)
             ]);
             
-            return response()->json([
+            $response = response()->json([
                 'success' => true,
                 'data' => $teams
             ]);
+
+            $response->headers->set('Cache-Control', 'private, max-age=60'); // Cache for 1 minute
+
+            PerformanceMonitor::logRequestSummary('GET /boards/{id}/teams', microtime(true) - $requestStartTime, strlen($response->getContent()));
+            return $response;
         } catch (\Exception $e) {
+            PerformanceMonitor::logQueryStats('board_teams_error');
             Log::error('Error fetching board teams', [
                 'board_id' => $board->id,
                 'error' => $e->getMessage(),
@@ -500,9 +581,10 @@ class BoardController extends Controller
                 'user_id' => $request->user()->id
             ]);
             
+            $fresh = $board->fresh(['team', 'createdBy']);
             return response()->json([
                 'success' => true,
-                'data' => $board->fresh(['team', 'createdBy']),
+                'data' => new \App\Http\Resources\BoardResource($fresh),
                 'message' => 'Team added to board successfully'
             ]);
         } catch (\Exception $e) {
@@ -545,9 +627,10 @@ class BoardController extends Controller
                 'user_id' => $request->user()->id
             ]);
             
+            $fresh = $board->fresh(['team', 'createdBy']);
             return response()->json([
                 'success' => true,
-                'data' => $board->fresh(['team', 'createdBy']),
+                'data' => new \App\Http\Resources\BoardResource($fresh),
                 'message' => 'Team removed from board successfully'
             ]);
         } catch (\Exception $e) {

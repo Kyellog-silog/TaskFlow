@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"
-import { QueryClient, QueryClientProvider } from "react-query"
+import { QueryClient, QueryClientProvider, setLogger } from "react-query"
 import { ReactQueryDevtools } from "react-query/devtools"
 import { Toaster } from "./components/ui/toaster"
 import { AuthProvider } from "./contexts/AuthContext"
@@ -26,24 +26,41 @@ import TeamsPage from "./pages/TeamsPage"
 import ProfilePage from "./pages/ProfilePage"
 import SettingsPage from "./pages/SettingsPage"
 import NotFoundPage from "./pages/NotFoundPage"
+import logger from "./lib/logger"
 
 // Styles
 import "./App.css"
 
-// Create a client for React Query
+// Create a client for React Query with optimized settings
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
       refetchOnWindowFocus: false,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      cacheTime: 10 * 60 * 1000, // 10 minutes
+      refetchOnReconnect: true,
+      refetchOnMount: true, // Changed to true for better UX
+      staleTime: 2 * 60 * 1000, // Reduced to 2 minutes for more up-to-date data
+      cacheTime: 10 * 60 * 1000, // Reduced to 10 minutes
+      // Add suspense: false to prevent unnecessary suspensions
+      suspense: false,
     },
     mutations: {
       retry: 1,
     },
   },
 })
+
+// Silence react-query logs in production
+if (process.env.NODE_ENV !== 'development') {
+  setLogger({
+    log: () => {},
+    warn: () => {},
+    error: (error) => {
+      // keep errors visible in prod console
+      logger.error(error)
+    },
+  })
+}
 
 function App() {
   const toastHandler = useToast()
@@ -88,21 +105,29 @@ function App() {
           queryClient.invalidateQueries(["tasks", "due-today"]) 
           queryClient.invalidateQueries(["tasks", "due-soon"]) 
           queryClient.invalidateQueries(["boards"]) // lists/cards
+          queryClient.invalidateQueries(["profile", "activity"]) // refresh activity
         },
         'board.deleted': () => {
           queryClient.invalidateQueries(["tasks", "due-today"]) 
           queryClient.invalidateQueries(["tasks", "due-soon"]) 
           queryClient.invalidateQueries(["boards"]) 
+          queryClient.invalidateQueries(["profile", "activity"]) 
         },
         'board.unarchived': () => {
           queryClient.invalidateQueries(["tasks", "due-today"]) 
           queryClient.invalidateQueries(["tasks", "due-soon"]) 
           queryClient.invalidateQueries(["boards"]) 
+          queryClient.invalidateQueries(["profile", "activity"]) 
         },
         'board.restored': () => {
           queryClient.invalidateQueries(["tasks", "due-today"]) 
           queryClient.invalidateQueries(["tasks", "due-soon"]) 
           queryClient.invalidateQueries(["boards"]) 
+          queryClient.invalidateQueries(["profile", "activity"]) 
+        },
+        'board.created': () => {
+          queryClient.invalidateQueries(["boards"]) 
+          queryClient.invalidateQueries(["profile", "activity"]) 
         },
         // Tasks lifecycle
         'task.created': (d: any) => {
@@ -110,21 +135,25 @@ function App() {
           // Update global due counters
           queryClient.invalidateQueries(["tasks", "due-today"]) 
           queryClient.invalidateQueries(["tasks", "due-soon"]) 
+          queryClient.invalidateQueries(["profile", "activity"]) 
         },
         'task.updated': (d: any) => {
           if (d?.boardId) queryClient.invalidateQueries(["tasks", d.boardId])
           queryClient.invalidateQueries(["tasks", "due-today"]) 
           queryClient.invalidateQueries(["tasks", "due-soon"]) 
+          queryClient.invalidateQueries(["profile", "activity"]) 
         },
         'task.moved': (d: any) => {
           if (d?.boardId) queryClient.invalidateQueries(["tasks", d.boardId])
           queryClient.invalidateQueries(["tasks", "due-today"]) 
           queryClient.invalidateQueries(["tasks", "due-soon"]) 
+          queryClient.invalidateQueries(["profile", "activity"]) 
         },
         'task.deleted': (d: any) => {
           if (d?.boardId) queryClient.invalidateQueries(["tasks", d.boardId])
           queryClient.invalidateQueries(["tasks", "due-today"]) 
           queryClient.invalidateQueries(["tasks", "due-soon"]) 
+          queryClient.invalidateQueries(["profile", "activity"]) 
         },
         // Comments
         'comment.created': (d: any) => {

@@ -47,7 +47,8 @@ class Task extends Model
      *
      * @var array
      */
-    protected $with = ['assignee', 'createdBy'];
+    // Remove automatic eager loading - load explicitly when needed
+    // protected $with = ['assignee', 'createdBy'];
 
     /**
      * The accessors to append to the model's array form.
@@ -193,7 +194,7 @@ class Task extends Model
     public function getIsOverdueAttribute(): bool
     {
         return $this->due_date && 
-               $this->due_date->isPast() && 
+               $this->due_date < now() && 
                !$this->completed_at;
     }
 

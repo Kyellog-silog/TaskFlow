@@ -8,6 +8,7 @@ use App\Models\BoardColumn;
 use App\Models\TaskActivity;
 use App\Models\Notification;
 use App\Http\Controllers\EventsController;
+use App\Services\PerformanceMonitor;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
@@ -22,16 +23,46 @@ class TaskController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
+        $requestStartTime = microtime(true);
+        PerformanceMonitor::enable();
+        PerformanceMonitor::enableQueryLogging();
+        
         try {
             $user = $request->user();
             Log::info('Fetching tasks', ['user_id' => $user->id, 'filters' => $request->all()]);
             
-            $query = Task::with(['assignee', 'createdBy', 'comments.user', 'board', 'column']);
+            PerformanceMonitor::startTimer('task_query_building', [
+                'user_id' => $user->id,
+                'filters' => $request->all()
+            ]);
+
+            $query = Task::query();
+            
+            // Only load relationships when needed
+            $relationships = ['assignee:id,name,avatar', 'createdBy:id,name'];
+            
+            if (!$request->boolean('only_count')) {
+                if ($request->get('include_board')) {
+                    $relationships[] = 'board:id,name,team_id,created_by';
+                }
+                if ($request->get('include_column')) {
+                    $relationships[] = 'column:id,board_id,name';
+                }
+                if ($request->get('include_comments')) {
+                    $relationships[] = 'comments:id,task_id,user_id,content,created_at';
+                    $relationships[] = 'comments.user:id,name,avatar';
+                }
+            }
+            
+            $query->with($relationships);
 
             // Filter by board
             if ($request->has('board_id')) {
+                PerformanceMonitor::startTimer('board_authorization_check');
                 $board = Board::findOrFail($request->board_id);
                 Gate::authorize('view', $board);
+                PerformanceMonitor::endTimer('board_authorization_check');
+                
                 $query->byBoard($request->board_id);
             } else {
                 // Only show tasks from boards the user can access and that are active (not archived)
@@ -40,35 +71,29 @@ class TaskController extends Controller
                 });
             }
 
-            // Filter by column
+            // Apply all filters
             if ($request->has('column_id')) {
                 $query->byColumn($request->column_id);
             }
 
-            // Filter by assignee
             if ($request->has('assignee_id')) {
                 $query->byAssignee($request->assignee_id);
             }
 
-            // Filter by priority
             if ($request->has('priority')) {
                 $query->byPriority($request->priority);
             }
 
-            // Search by title
             if ($request->has('search')) {
                 $query->where('title', 'like', '%' . $request->search . '%');
             }
 
-            // Filter by status
             if ($request->has('status')) {
                 $query->where('column_id', $request->status);
             }
 
-            // Filter to only uncompleted tasks
             if ($request->boolean('uncompleted')) {
                 $query->whereNull('completed_at');
-                // Also exclude tasks that are already in a "Done/Complete" column (legacy tasks without completed_at)
                 $query->whereHas('column', function ($cq) {
                     $cq->whereRaw('LOWER(name) NOT LIKE ?', ['%done%'])
                        ->whereRaw('LOWER(name) NOT LIKE ?', ['%complete%']);
@@ -78,7 +103,6 @@ class TaskController extends Controller
             // Due date based filters
             if ($request->has('due')) {
                 $due = $request->get('due');
-                // Exclude tasks without a due_date for any due-based filter
                 $query->whereNotNull('due_date');
                 switch ($due) {
                     case 'today':
@@ -91,7 +115,6 @@ class TaskController extends Controller
                         $query->whereDate('due_date', '<', now()->toDateString());
                         break;
                     case 'soon':
-                        // Tasks due between today and N days from now (inclusive)
                         $days = (int) $request->get('days', 3);
                         if ($days < 0) { $days = 0; }
                         $start = now()->startOfDay();
@@ -101,30 +124,62 @@ class TaskController extends Controller
                 }
             }
 
-            // Limit results
-            if ($request->has('limit')) {
-                $query->limit($request->limit);
-            }
+            PerformanceMonitor::endTimer('task_query_building');
 
-            // Only return a count when requested to keep dashboard light-weight
+            // Pagination and limits
+            $limit = (int) ($request->get('limit', 200));
+            $limit = max(1, min($limit, 500));
+            $page = (int) ($request->get('page', 1));
+
+            // Only return a count when requested
             if ($request->boolean('only_count')) {
+                PerformanceMonitor::startTimer('task_count_query');
                 $count = $query->count();
+                PerformanceMonitor::endTimer('task_count_query', ['count' => $count]);
+                
+                PerformanceMonitor::logQueryStats('task_count');
+                
                 Log::info('Tasks count fetched successfully', ['count' => $count]);
-                return response()->json([
+                $response = response()->json([
                     'success' => true,
                     'data' => ['count' => $count]
                 ]);
+                $response->headers->set('Cache-Control', 'private, max-age=30');
+                
+                PerformanceMonitor::logRequestSummary('GET /tasks (count)', microtime(true) - $requestStartTime, strlen($response->getContent()));
+                return $response;
             }
 
-            $tasks = $query->orderBy('position')->get();
+            // Execute main query with timing
+            PerformanceMonitor::startTimer('task_main_query', [
+                'limit' => $limit,
+                'page' => $page,
+                'relationships' => count($relationships)
+            ]);
+            
+            $tasks = $query->orderBy('position')
+                ->forPage($page, $limit)
+                ->get();
+            
+            PerformanceMonitor::endTimer('task_main_query', [
+                'tasks_count' => $tasks->count(),
+                'relationships_loaded' => count($relationships)
+            ]);
+            
+            PerformanceMonitor::logQueryStats('task_index');
             
             Log::info('Tasks fetched successfully', ['count' => $tasks->count()]);
             
-            return response()->json([
+            $response = response()->json([
                 'success' => true,
-                'data' => $tasks
+                'data' => \App\Http\Resources\TaskResource::collection($tasks)
             ]);
+            $response->headers->set('Cache-Control', 'private, max-age=15');
+            
+            PerformanceMonitor::logRequestSummary('GET /tasks', microtime(true) - $requestStartTime, strlen($response->getContent()));
+            return $response;
         } catch (\Exception $e) {
+            PerformanceMonitor::logQueryStats('task_index_error');
             Log::error('Error fetching tasks', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -142,8 +197,16 @@ class TaskController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $requestStartTime = microtime(true);
+        PerformanceMonitor::enable();
+        PerformanceMonitor::enableQueryLogging();
+        
         try {
             Log::info('Creating task with request data:', $request->all());
+            
+            PerformanceMonitor::startTimer('task_validation', [
+                'request_size' => strlen(json_encode($request->all()))
+            ]);
             
             $validated = $request->validate([
                 'title' => 'required|string|max:255',
@@ -155,18 +218,24 @@ class TaskController extends Controller
                 'due_date' => 'nullable|date',
             ]);
             
+            PerformanceMonitor::endTimer('task_validation');
             Log::info('Validated task data:', $validated);
 
-            // Check if user can create tasks on the board
+            // Check permissions and verify relationships
+            PerformanceMonitor::startTimer('task_authorization_checks');
+            
             $board = Board::findOrFail($validated['board_id']);
             Gate::authorize('createTasks', $board);
 
-            // Verify the column belongs to the board
             $column = BoardColumn::where('id', $validated['column_id'])
                 ->where('board_id', $validated['board_id'])
                 ->firstOrFail();
 
-            // Get the position for the new task
+            PerformanceMonitor::endTimer('task_authorization_checks');
+
+            // Get position and create task
+            PerformanceMonitor::startTimer('task_creation_transaction');
+            
             $position = Task::where('column_id', $validated['column_id'])->count();
 
             DB::beginTransaction();
@@ -192,9 +261,14 @@ class TaskController extends Controller
             ]);
 
             DB::commit();
+            PerformanceMonitor::endTimer('task_creation_transaction', ['task_id' => $task->id]);
 
-            // Load the task with relationships
+            // Load relationships
+            PerformanceMonitor::startTimer('task_relationship_loading');
             $task = $task->fresh(['assignee', 'createdBy', 'comments.user', 'board', 'column']);
+            PerformanceMonitor::endTimer('task_relationship_loading');
+            
+            PerformanceMonitor::logQueryStats('task_store');
             Log::info('Task created successfully', ['task_id' => $task->id]);
 
             // Emit SSE event for real-time updates
@@ -209,12 +283,16 @@ class TaskController extends Controller
                 ]);
             } catch (\Throwable $e) {}
             
-            return response()->json([
+            $response = response()->json([
                 'success' => true,
                 'data' => $task
             ], 201);
+            
+            PerformanceMonitor::logRequestSummary('POST /tasks', microtime(true) - $requestStartTime, strlen($response->getContent()));
+            return $response;
         } catch (\Exception $e) {
             DB::rollback();
+            PerformanceMonitor::logQueryStats('task_store_error');
             Log::error('Error creating task', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
@@ -249,10 +327,12 @@ class TaskController extends Controller
             
             Log::info('Task fetched successfully', ['task_id' => $task->id]);
             
-            return response()->json([
+            $response = response()->json([
                 'success' => true,
-                'data' => $task
+                'data' => new \App\Http\Resources\TaskResource($task)
             ]);
+            $response->headers->set('Cache-Control', 'private, max-age=30');
+            return $response;
         } catch (\Exception $e) {
             Log::error('Error fetching task', [
                 'task_id' => $task->id,
@@ -315,9 +395,10 @@ class TaskController extends Controller
                 ]);
             } catch (\Throwable $e) {}
             
+            $fresh = $task->fresh(['assignee', 'createdBy', 'comments.user', 'board', 'column']);
             return response()->json([
                 'success' => true,
-                'data' => $task->fresh(['assignee', 'createdBy', 'comments.user', 'board', 'column'])
+                'data' => new \App\Http\Resources\TaskResource($fresh)
             ]);
         } catch (\Exception $e) {
             DB::rollback();
@@ -344,6 +425,21 @@ class TaskController extends Controller
             Log::info('Deleting task', ['task_id' => $task->id]);
             
             DB::beginTransaction();
+            // Capture key fields before delete
+            $actorId = Auth::id();
+            $taskTitle = $task->title;
+            
+            // Log activity prior to soft delete so it remains visible in profile feed
+            try {
+                TaskActivity::create([
+                    'task_id' => $task->id,
+                    'user_id' => $actorId,
+                    'action' => 'deleted',
+                    'description' => 'Task deleted'.($taskTitle ? ': '.$taskTitle : ''),
+                ]);
+            } catch (\Throwable $e) {
+                // non-fatal
+            }
             
             // The position updates are handled by the Task model's boot method
             $task->delete();
@@ -357,7 +453,7 @@ class TaskController extends Controller
                 EventsController::queueEvent('task.deleted', [
                     'boardId' => $task->board_id,
                     'taskId' => $task->id,
-                    'userId' => Auth::id(),
+                    'userId' => $actorId,
                     'timestamp' => now()->toISOString(),
                 ]);
             } catch (\Throwable $e) {}
@@ -386,24 +482,30 @@ class TaskController extends Controller
      */
     public function move(Request $request, Task $task): JsonResponse
     {
+        $requestStartTime = microtime(true);
+        PerformanceMonitor::enable();
+        PerformanceMonitor::enableQueryLogging();
+        
         try {
             Gate::authorize('move', $task);
             Log::info('Moving task', ['task_id' => $task->id, 'data' => $request->all()]);
             
+            PerformanceMonitor::startTimer('task_move_validation');
             $validated = $request->validate([
                 'column_id' => 'required|exists:board_columns,id',
                 'position' => 'required|integer|min:0',
                 'operation_id' => 'nullable|string',
                 'client_timestamp' => 'nullable|integer',
             ]);
+            PerformanceMonitor::endTimer('task_move_validation');
 
-            // Check for conflicts - but allow some tolerance for rapid moves from same user
-            // Only check conflicts if timestamp difference is more than 2 seconds
+            // Conflict detection with timing
             if (isset($validated['client_timestamp'])) {
+                PerformanceMonitor::startTimer('task_conflict_check');
                 $timeDifference = ($task->updated_at->timestamp * 1000) - $validated['client_timestamp'];
                 
-                // If task was updated more than 2 seconds after client's timestamp, it's likely a real conflict
                 if ($timeDifference > 2000) {
+                    PerformanceMonitor::endTimer('task_conflict_check', ['conflict_detected' => true]);
                     return response()->json([
                         'success' => false,
                         'conflict' => true,
@@ -412,19 +514,29 @@ class TaskController extends Controller
                         'time_difference' => $timeDifference
                     ], 409);
                 }
+                PerformanceMonitor::endTimer('task_conflict_check', ['conflict_detected' => false]);
             }
 
-            // Verify the column belongs to the same board
+            // Verify column belongs to same board
+            PerformanceMonitor::startTimer('task_move_authorization');
             $column = BoardColumn::where('id', $validated['column_id'])
                 ->where('board_id', $task->board_id)
                 ->firstOrFail();
+            PerformanceMonitor::endTimer('task_move_authorization');
 
             $oldColumnId = $task->column_id;
             $oldPosition = $task->position;
             
+            PerformanceMonitor::startTimer('task_move_position_updates', [
+                'old_column' => $oldColumnId,
+                'new_column' => $validated['column_id'],
+                'old_position' => $oldPosition,
+                'new_position' => $validated['position']
+            ]);
+            
             DB::beginTransaction();
             
-            // Update positions of other tasks
+            // Update positions of other tasks - this is often the slowest part
             if ($task->column_id != $validated['column_id']) {
                 // Moving to different column
                 Task::where('column_id', $task->column_id)
@@ -437,12 +549,10 @@ class TaskController extends Controller
             } else {
                 // Moving within same column
                 if ($validated['position'] > $task->position) {
-                    // Moving down
                     Task::where('column_id', $task->column_id)
                         ->whereBetween('position', [$task->position + 1, $validated['position']])
                         ->decrement('position');
                 } else if ($validated['position'] < $task->position) {
-                    // Moving up
                     Task::where('column_id', $task->column_id)
                         ->whereBetween('position', [$validated['position'], $task->position - 1])
                         ->increment('position');
@@ -469,6 +579,9 @@ class TaskController extends Controller
             ]);
 
             DB::commit();
+            PerformanceMonitor::endTimer('task_move_position_updates');
+            
+            PerformanceMonitor::logQueryStats('task_move');
             
             Log::info('Task moved successfully', [
                 'task_id' => $task->id, 
@@ -489,14 +602,18 @@ class TaskController extends Controller
                 ]);
             } catch (\Throwable $e) {}
             
-            return response()->json([
+            $response = response()->json([
                 'success' => true,
                 'data' => $task->fresh(['assignee', 'createdBy', 'comments.user', 'board', 'column']),
                 'server_timestamp' => now()->timestamp * 1000,
                 'operation_id' => $validated['operation_id'] ?? null
             ]);
+            
+            PerformanceMonitor::logRequestSummary('POST /tasks/{id}/move', microtime(true) - $requestStartTime, strlen($response->getContent()));
+            return $response;
         } catch (\Exception $e) {
             DB::rollback();
+            PerformanceMonitor::logQueryStats('task_move_error');
             Log::error('Error moving task', [
                 'task_id' => $task->id,
                 'error' => $e->getMessage(),
@@ -567,9 +684,10 @@ class TaskController extends Controller
                 }
             } catch (\Throwable $e) {}
             
+            $fresh = $task->fresh(['assignee', 'createdBy', 'comments.user', 'board', 'column']);
             return response()->json([
                 'success' => true,
-                'data' => $task->fresh(['assignee', 'createdBy', 'comments.user', 'board', 'column'])
+                'data' => new \App\Http\Resources\TaskResource($fresh)
             ]);
         } catch (\Exception $e) {
             DB::rollback();
@@ -649,9 +767,10 @@ class TaskController extends Controller
                 }
             } catch (\Throwable $e) {}
             
+            $fresh = $task->fresh(['assignee', 'createdBy', 'comments.user', 'board', 'column']);
             return response()->json([
                 'success' => true,
-                'data' => $task->fresh(['assignee', 'createdBy', 'comments.user', 'board', 'column'])
+                'data' => new \App\Http\Resources\TaskResource($fresh)
             ]);
         } catch (\Exception $e) {
             DB::rollback();
@@ -707,9 +826,10 @@ class TaskController extends Controller
                 ]);
             } catch (\Throwable $e) {}
             
+            $fresh = $task->fresh(['assignee', 'createdBy', 'comments.user', 'board', 'column']);
             return response()->json([
                 'success' => true,
-                'data' => $task->fresh(['assignee', 'createdBy', 'comments.user', 'board', 'column'])
+                'data' => new \App\Http\Resources\TaskResource($fresh)
             ]);
         } catch (\Exception $e) {
             DB::rollback();
@@ -771,9 +891,10 @@ class TaskController extends Controller
                 ]);
             } catch (\Throwable $e) {}
             
+            $fresh = $newTask->load(['assignee', 'createdBy', 'comments.user', 'board', 'column']);
             return response()->json([
                 'success' => true,
-                'data' => $newTask->load(['assignee', 'createdBy', 'comments.user', 'board', 'column'])
+                'data' => new \App\Http\Resources\TaskResource($fresh)
             ], 201);
         } catch (\Exception $e) {
             DB::rollback();

@@ -16,6 +16,7 @@ import { useMultiTeamPermissions, useTeamPermissions } from "../hooks/useTeamPer
 import webSocketService from "../services/websocket"
 import { Sparkles, Users, Target, Clock, ChevronLeft } from "lucide-react"
 import { Button } from "../components/ui/button"
+import logger from "../lib/logger"
 
 export interface Task {
   id: string
@@ -84,7 +85,7 @@ const BoardPage: React.FC = () => {
         onTaskMove: (data: any) => {
           // Only update if this move wasn't initiated by the current user
           if (data.userId !== user.id && !hasPendingOperations(data.taskId)) {
-            console.log("Received remote task move:", data)
+            logger.log("Received remote task move:", data)
             // Update local state to reflect remote changes
             setColumns((prevColumns) => {
               const newColumns = [...prevColumns]
@@ -119,7 +120,7 @@ const BoardPage: React.FC = () => {
         webSocketService.unsubscribeFromBoard(boardId)
       }
     } else {
-      console.log("WebSocket is disabled - running in offline mode")
+  logger.log("WebSocket is disabled - running in offline mode")
       // Disable WebSocket to prevent connection attempts
       webSocketService.disable()
     }
@@ -191,7 +192,7 @@ const BoardPage: React.FC = () => {
     {
       enabled: !!user?.id,
       staleTime: 60 * 1000,
-      refetchInterval: 30000, // Refetch every 30 seconds to catch role changes
+      refetchInterval: false,
       onError: (error: any) => {
         toast({
           title: "Error",
@@ -212,9 +213,9 @@ const BoardPage: React.FC = () => {
     {
       enabled: !!boardId,
       staleTime: 60 * 1000,
-      refetchInterval: 30000, // Refetch every 30 seconds to catch role changes
+      refetchInterval: false,
       onError: (error: any) => {
-        console.log("No teams found for this board or error loading board teams")
+  logger.log("No teams found for this board or error loading board teams")
       },
     },
   )
@@ -240,7 +241,7 @@ const BoardPage: React.FC = () => {
   const { data: tasksData, isLoading: tasksLoading } = useQuery(
     ["tasks", boardId],
     async () => {
-      const response = await tasksAPI.getTasks(boardId)
+      const response = await tasksAPI.getTasks(boardId, { limit: 300 })
       return response
     },
     {
@@ -279,7 +280,7 @@ const BoardPage: React.FC = () => {
     : clientTeamPerms
 
   // Show permission status in console for debugging
-  console.log("User permissions for board:", {
+  logger.log("User permissions for board:", {
     userRole: permissions.userRole,
     canEditTasks: permissions.canEditTasks,
     canCreateTasks: permissions.canCreateTasks,
@@ -365,7 +366,7 @@ const BoardPage: React.FC = () => {
   }
 
   const handleTaskMoveFromModal = (taskId: string, newStatus: string) => {
-    console.log(`Moving task ${taskId} to status ${newStatus} from modal`)
+  logger.log(`Moving task ${taskId} to status ${newStatus} from modal`)
 
     // Map frontend status to column title, then find the actual column
     const statusToTitleMap: Record<string, string> = {
@@ -377,11 +378,11 @@ const BoardPage: React.FC = () => {
 
     const targetColumnTitle = statusToTitleMap[newStatus]
     if (!targetColumnTitle) {
-      console.error("Unknown status:", newStatus)
+  logger.error("Unknown status:", newStatus)
       return
     }
 
-    console.log(`Looking for column with title: ${targetColumnTitle}`)
+  logger.log(`Looking for column with title: ${targetColumnTitle}`)
 
     // Find the task and its current column
     const currentTask = columns.flatMap((col) => col.tasks).find((task) => task.id === taskId)
@@ -389,7 +390,7 @@ const BoardPage: React.FC = () => {
     const targetColumn = columns.find((col) => col.title === targetColumnTitle)
 
     if (!currentTask || !currentColumn || !targetColumn) {
-      console.error("Task, current column, or target column not found", {
+  logger.error("Task, current column, or target column not found", {
         currentTask: !!currentTask,
         currentColumn: !!currentColumn,
         targetColumn: !!targetColumn,
@@ -401,7 +402,7 @@ const BoardPage: React.FC = () => {
 
     // Don't move if it's already in the correct column
     if (currentColumn.id === targetColumn.id) {
-      console.log("Task is already in the correct column")
+  logger.log("Task is already in the correct column")
       return
     }
 
@@ -477,7 +478,7 @@ const BoardPage: React.FC = () => {
             ? {
                 id: task.assignee.id?.toString() || "",
                 name: task.assignee.name || "Unknown",
-                avatar: task.assignee.avatar || "/placeholder.svg?height=32&width=32",
+                avatar: task.assignee.avatar || "/placeholder.svg",
               }
             : undefined,
           dueDate: task.due_date || task.dueDate,
@@ -500,7 +501,7 @@ const BoardPage: React.FC = () => {
   }, [board, tasksData])
 
   const handleTaskMove = (taskId: string, sourceColumn: string, destColumn: string, position: number) => {
-    console.log(`Moving task ${taskId} from ${sourceColumn} to ${destColumn} at position ${position}`)
+  logger.log(`Moving task ${taskId} from ${sourceColumn} to ${destColumn} at position ${position}`)
 
     // Optimistic update function
     const performOptimisticUpdate = (taskId: string, sourceColumn: string, destColumn: string, position: number) => {
@@ -510,13 +511,13 @@ const BoardPage: React.FC = () => {
         const destCol = newColumns.find((col) => col.id === destColumn)
 
         if (!sourceCol || !destCol) {
-          console.error("Source or destination column not found")
+          logger.warn("Source or destination column not found")
           return prevColumns
         }
 
         const taskIndex = sourceCol.tasks.findIndex((task) => task.id === taskId)
         if (taskIndex === -1) {
-          console.error("Task not found in source column")
+          logger.warn("Task not found in source column")
           return prevColumns
         }
 
@@ -679,7 +680,7 @@ const BoardPage: React.FC = () => {
           currentBoardTeams={currentBoardTeams}
           user={user}
           onTeamUpdate={() => {
-            console.log("Invalidating team queries after update...")
+            logger.log("Invalidating team queries after update...")
 
             // Invalidate all team-related queries
             queryClient.invalidateQueries(["board-teams", boardId])

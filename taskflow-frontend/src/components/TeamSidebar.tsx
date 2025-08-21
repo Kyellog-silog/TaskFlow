@@ -27,6 +27,7 @@ import { Separator } from "./ui/separator"
 import { ScrollArea } from "./ui/scroll-area"
 import { Collapsible, CollapsibleContent } from "./ui/collapsible"
 import { boardsAPI, teamsAPI } from "../services/api"
+import logger from "../lib/logger"
 import { useToast } from "../hooks/use-toast"
 
 interface TeamMember {
@@ -87,7 +88,7 @@ export function TeamSidebar({
         [...availableTeams, ...currentBoardTeams].find(team => team.id === selectedTeam.id)
       
       if (updatedTeam && JSON.stringify(updatedTeam) !== JSON.stringify(selectedTeam)) {
-        console.log('Updating selectedTeam with fresh data from props:', updatedTeam)
+        logger.log('Updating selectedTeam with fresh data from props:', updatedTeam)
         setSelectedTeam(updatedTeam)
       }
     }
@@ -216,7 +217,7 @@ export function TeamSidebar({
                 : member
             )
           }
-          console.log("Immediately updating selectedTeam with new role:", updatedSelectedTeam)
+          logger.log("Immediately updating selectedTeam with new role:", updatedSelectedTeam)
           setSelectedTeam(updatedSelectedTeam)
         }
 
@@ -224,7 +225,7 @@ export function TeamSidebar({
           title: "Success",
           description: "Member role updated successfully",
         })
-        console.log("Role update successful, invalidating all team caches...")
+  logger.log("Role update successful, invalidating all team caches...")
         // Invalidate all team-related caches aggressively
         queryClient.invalidateQueries({ queryKey: ["teams"] })
         queryClient.invalidateQueries({ queryKey: ["user-teams"] })
@@ -555,7 +556,7 @@ export function TeamSidebar({
                                       const roleInfo = getRoleDisplayInfo(memberRole)
                                       
                                       // Debug logging for sidebar display
-                                      console.log(`[SIDEBAR] Member ${member.name} (ID: ${member.id}) - Role: ${member.role}, Display: ${memberRole}`)
+                                      logger.log(`[SIDEBAR] Member ${member.name} (ID: ${member.id}) - Role: ${member.role}, Display: ${memberRole}`)
                                       
                                       return (
                                         <div
@@ -734,7 +735,7 @@ export function TeamSidebar({
                                           selectedTeam.owner?.id !== member.id
                     
                     // Debug logging
-                    console.log(`Member ${member.name} (ID: ${member.id}) - Role: ${member.role}, Display: ${memberRole}`)
+                    logger.log(`Member ${member.name} (ID: ${member.id}) - Role: ${member.role}, Display: ${memberRole}`)
                     
                     return (
                       <div

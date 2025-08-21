@@ -3,6 +3,7 @@ import { useState, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient } from 'react-query'
 import { useToast } from './use-toast'
 import { tasksAPI } from '../services/api'
+import logger from '../lib/logger'
 
 interface PendingOperation {
   id: string
@@ -107,12 +108,12 @@ export const useTaskOperations = ({ boardId }: UseTaskOperationsProps) => {
         // Handle conflicts gracefully
         if (error.response?.status === 409 && error.response?.data?.conflict) {
           const conflictData = error.response.data
-          console.log('Conflict detected:', conflictData)
+          logger.log('Conflict detected:', conflictData)
           
           // If time difference is small (< 2 seconds), it's likely our own rapid moves
           if (conflictData.time_difference && conflictData.time_difference < 2000) {
             // Don't show error for rapid moves, just refresh silently
-            console.log('Rapid move conflict, refreshing state silently')
+            logger.log('Rapid move conflict, refreshing state silently')
             queryClient.invalidateQueries(["tasks", boardId])
             return
           }
@@ -154,7 +155,7 @@ export const useTaskOperations = ({ boardId }: UseTaskOperationsProps) => {
     
     // Rate limiting: prevent moves faster than 100ms for the same task
     if (now - lastMove < 100) {
-      console.log('Rate limiting: move too fast, skipping API call')
+      logger.log('Rate limiting: move too fast, skipping API call')
       // Still do optimistic update for immediate UI feedback
       optimisticUpdateFn(taskId, sourceColumn, destColumn, position)
       return

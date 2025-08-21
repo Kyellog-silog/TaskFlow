@@ -15,6 +15,7 @@ use App\Http\Controllers\EventsController;
 use App\Http\Controllers\CommentController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\UserController;
 use App\Models\Task;
 use Illuminate\Support\Facades\Gate;
 
@@ -46,14 +47,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
     
     // User routes
-    Route::get('/user', function (Request $request) {
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'user' => $request->user()
-            ]
-        ]);
-    });
+    Route::get('/user', [UserController::class, 'show']);
     
     Route::put('/user/profile', [RegisteredUserController::class, 'updateProfile']);
     

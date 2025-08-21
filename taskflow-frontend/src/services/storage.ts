@@ -1,10 +1,11 @@
+import logger from "../lib/logger"
 class StorageService {
     // Local Storage methods
     setItem(key: string, value: any): void {
       try {
         localStorage.setItem(key, JSON.stringify(value))
       } catch (error) {
-        console.error("Error saving to localStorage:", error)
+        logger.error("Error saving to localStorage:", error)
       }
     }
   
@@ -13,7 +14,7 @@ class StorageService {
         const item = localStorage.getItem(key)
         return item ? JSON.parse(item) : null
       } catch (error) {
-        console.error("Error reading from localStorage:", error)
+        logger.error("Error reading from localStorage:", error)
         return null
       }
     }
@@ -22,7 +23,7 @@ class StorageService {
       try {
         localStorage.removeItem(key)
       } catch (error) {
-        console.error("Error removing from localStorage:", error)
+        logger.error("Error removing from localStorage:", error)
       }
     }
   
@@ -30,7 +31,7 @@ class StorageService {
       try {
         localStorage.clear()
       } catch (error) {
-        console.error("Error clearing localStorage:", error)
+        logger.error("Error clearing localStorage:", error)
       }
     }
   
@@ -39,7 +40,7 @@ class StorageService {
       try {
         sessionStorage.setItem(key, JSON.stringify(value))
       } catch (error) {
-        console.error("Error saving to sessionStorage:", error)
+        logger.error("Error saving to sessionStorage:", error)
       }
     }
   
@@ -48,7 +49,7 @@ class StorageService {
         const item = sessionStorage.getItem(key)
         return item ? JSON.parse(item) : null
       } catch (error) {
-        console.error("Error reading from sessionStorage:", error)
+        logger.error("Error reading from sessionStorage:", error)
         return null
       }
     }
@@ -57,7 +58,7 @@ class StorageService {
       try {
         sessionStorage.removeItem(key)
       } catch (error) {
-        console.error("Error removing from sessionStorage:", error)
+        logger.error("Error removing from sessionStorage:", error)
       }
     }
   

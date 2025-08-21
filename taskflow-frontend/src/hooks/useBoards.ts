@@ -8,9 +8,11 @@ export const useBoards = (type: 'active' | 'archived' | 'deleted' | 'recent' = '
     ["boards", type, limit], 
     () => boardsAPI.getBoards(type, limit),
     {
-      refetchOnWindowFocus: true,
-      refetchOnMount: true,
-      staleTime: 0,
+  // Idle-friendly defaults; SSE will invalidate when needed
+  refetchOnWindowFocus: false,
+  refetchOnMount: false,
+  refetchInterval: false,
+  staleTime: 5 * 60 * 1000,
     }
   )
 

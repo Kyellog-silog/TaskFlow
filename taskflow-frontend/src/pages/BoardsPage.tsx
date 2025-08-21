@@ -46,9 +46,10 @@ const BoardsPage = () => {
       return response
     },
     {
-      refetchOnWindowFocus: true,
-      refetchOnMount: true,
-      staleTime: 0,
+  refetchOnWindowFocus: false,
+  refetchOnMount: false,
+  refetchInterval: false,
+  staleTime: 5 * 60 * 1000,
     },
   )
 
@@ -66,9 +67,10 @@ const BoardsPage = () => {
     },
     {
       enabled: activeTab === "archived",
-      refetchOnWindowFocus: true,
-      refetchOnMount: true,
-      staleTime: 0,
+  refetchOnWindowFocus: false,
+  refetchOnMount: false,
+  refetchInterval: false,
+  staleTime: 5 * 60 * 1000,
     },
   )
 
@@ -86,9 +88,10 @@ const BoardsPage = () => {
     },
     {
       enabled: activeTab === "deleted",
-      refetchOnWindowFocus: true,
-      refetchOnMount: true,
-      staleTime: 0,
+  refetchOnWindowFocus: false,
+  refetchOnMount: false,
+  refetchInterval: false,
+  staleTime: 5 * 60 * 1000,
     },
   )
 
@@ -499,7 +502,7 @@ const BoardsPage = () => {
           <div className="flex items-center justify-between pt-3 border-t border-gray-200">
             <div className="flex items-center space-x-3">
               <Avatar className="h-8 w-8 ring-2 ring-white shadow-md">
-                <AvatarImage src={board.created_by?.avatar || "/placeholder.svg?height=32&width=32"} />
+                <AvatarImage src={board.created_by?.avatar || "/placeholder.svg"} />
                 <AvatarFallback className="text-xs bg-gradient-to-br from-blue-500 to-purple-500 text-white font-bold">
                   {board.created_by?.name?.charAt(0) || "U"}
                 </AvatarFallback>

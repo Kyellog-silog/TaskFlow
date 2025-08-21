@@ -3,6 +3,7 @@
 import * as React from "react"
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import { authAPI } from "../services/api"
+import logger from "../lib/logger"
 
 
 
@@ -112,7 +113,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(response.data.user);
       }
     } catch (error) {
-      console.error('Failed to refresh user data:', error);
+      logger.error('Failed to refresh user data:', error);
       // Don't throw error as this is a background refresh
     }
   }
