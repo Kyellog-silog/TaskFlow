@@ -4,6 +4,7 @@ import * as React from "react"
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import { authAPI } from "../services/api"
 import logger from "../lib/logger"
+import { shouldAttemptAuthCheck, setAuthAttempted, clearAuthState } from "../utils/auth"
 
 
 
@@ -53,13 +54,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     const checkAuthStatus = async() => {
       try {
+        // Only make the API call if there's a good chance we're authenticated
+        if (!shouldAttemptAuthCheck()) {
+          logger.log('No session indicators found, skipping auth check')
+          setIsLoading(false)
+          return
+        }
+
+        logger.log('Session indicators detected, verifying authentication status')
         const response = await authAPI.getUser();
         if (response.success && response.data.user) {
           setUser(response.data.user);
+          setAuthAttempted()
         }
-      } catch (error) {
+      } catch (error: any) {
         // If error, user is not authenticated
+        logger.log('Auth verification failed:', error.response?.status || error.message)
         setUser(null);
+        // Clear auth state if we got a clear "not authenticated" response
+        if (error.response?.status === 401 || error.response?.status === 419) {
+          clearAuthState()
+        }
       } finally {
         setIsLoading(false);
       }
@@ -73,6 +88,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const response = await authAPI.login(email, password);
     if (response.success && response.data && response.data.user) {
       setUser(response.data.user);
+      setAuthAttempted()
     }
     return response;
   }
@@ -81,6 +97,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const response = await authAPI.register(name, email, password, password_confirmation);
     if (response.success && response.data && response.data.user) {
       setUser(response.data.user);
+      setAuthAttempted()
     }
     return response;
   }
@@ -91,6 +108,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } finally {
       // Even if logout API fails, clear user state
       setUser(null);
+      clearAuthState()
     }
   }
 

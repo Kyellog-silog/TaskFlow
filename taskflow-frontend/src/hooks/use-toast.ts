@@ -1,13 +1,6 @@
 "use client"
 
-import { useState } from "react"
-
-interface Toast {
-  id: string
-  title: string
-  description?: string
-  variant?: "default" | "destructive"
-}
+import { toast as sonnerToast } from "sonner"
 
 interface ToastInput {
   title: string
@@ -16,25 +9,21 @@ interface ToastInput {
 }
 
 export const useToast = () => {
-  const [toasts, setToasts] = useState<Toast[]>([])
-
-  const toast = (newToast: ToastInput) => {
-    const toastWithId = {
-      ...newToast,
-      id: Math.random().toString(36).substring(2, 9),
+  const toast = (data: ToastInput) => {
+    if (data.variant === "destructive") {
+      sonnerToast.error(data.title, {
+        description: data.description,
+      })
+    } else {
+      sonnerToast.success(data.title, {
+        description: data.description,
+      })
     }
-    
-    setToasts((prev) => [...prev, toastWithId])
-
-    // Auto remove after 5 seconds
-    setTimeout(() => {
-      setToasts((prev) => prev.filter(t => t.id !== toastWithId.id))
-    }, 5000)
   }
 
-  const removeToast = (id: string) => {
-    setToasts((prev) => prev.filter(t => t.id !== id))
-  }
+  // Return empty arrays for backward compatibility
+  const toasts: any[] = []
+  const removeToast = (id: string) => {}
 
   return { toast, toasts, removeToast }
 }
